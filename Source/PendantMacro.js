@@ -2,7 +2,7 @@
 
 // These must match Main.h
 const PENDANT_VERSION = "1.0";
-const PENDANT_BAUD_RATE = 38400; // must match Main.h
+const PENDANT_BAUD_RATE = 38400;
 
 const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - also ACK
 
