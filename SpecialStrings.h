@@ -1,0 +1,76 @@
+#pragma once
+
+#define CHAR_UNCHECKED '\x01'
+#define STRING_UNCHECKED "\x01"
+#define CHAR_CHECKED '\x02'
+#define STRING_CHECKED "\x02"
+#define CHAR_HOLD '\x03'
+#define STRING_HOLD "\x03"
+#define CHAR_PLACEHOLDER '\x04'
+#define STRING_PLACEHOLDER "\x04"
+
+#define CHAR_BOLD_0 '\x10'
+#define STRING_BOLD_0 "\x10"
+#define CHAR_BOLD_1 '\x11'
+#define STRING_BOLD_1 "\x11"
+#define CHAR_BOLD_2 '\x12'
+#define STRING_BOLD_2 "\x12"
+#define CHAR_BOLD_3 '\x13'
+#define STRING_BOLD_3 "\x13"
+#define CHAR_BOLD_4 '\x14'
+#define STRING_BOLD_4 "\x14"
+#define CHAR_BOLD_5 '\x15'
+#define STRING_BOLD_5 "\x15"
+#define CHAR_BOLD_6 '\x16'
+#define STRING_BOLD_6 "\x16"
+#define CHAR_BOLD_7 '\x17'
+#define STRING_BOLD_7 "\x17"
+#define CHAR_BOLD_8 '\x18'
+#define STRING_BOLD_8 "\x18"
+#define CHAR_BOLD_9 '\x19'
+#define STRING_BOLD_9 "\x19"
+
+#define CHAR_BOLD_PERCENT '\x1A'
+#define STRING_BOLD_PERCENT "\x1A"
+#define CHAR_BOLD_F '\x1B'
+#define STRING_BOLD_F "\x1B"
+#define CHAR_BOLD_S '\x1C'
+#define STRING_BOLD_S "\x1C"
+#define CHAR_BOLD_X '\x1D'
+#define STRING_BOLD_X "\x1D"
+#define CHAR_BOLD_Y '\x1E'
+#define STRING_BOLD_Y "\x1E"
+#define CHAR_BOLD_Z '\x1F'
+#define STRING_BOLD_Z "\x1F"
+
+DEFINE_STRING(g_StrF, "F");
+DEFINE_STRING(g_StrS, "S");
+DEFINE_STRING(g_StrX, "X");
+DEFINE_STRING(g_StrY, "Y");
+DEFINE_STRING(g_StrZ, "Z");
+DEFINE_STRING(g_StrXYZ, "XYZ");
+
+DEFINE_STRING(g_StrBoldF, STRING_BOLD_F);
+DEFINE_STRING(g_StrBoldS, STRING_BOLD_S);
+DEFINE_STRING(g_StrBoldX, STRING_BOLD_X);
+DEFINE_STRING(g_StrBoldY, STRING_BOLD_Y);
+DEFINE_STRING(g_StrBoldZ, STRING_BOLD_Z);
+DEFINE_STRING(g_StrPercent, "%");
+DEFINE_STRING(g_StrBoldPercent, STRING_BOLD_PERCENT);
+
+DEFINE_STRING(g_StrWCS, "[WCS]");
+DEFINE_STRING(g_StrMCS, "[MCS]");
+DEFINE_STRING(g_StrBack, "Back");
+DEFINE_STRING(g_StrHome, "Home");
+DEFINE_STRING(g_StrOK, "OK");
+DEFINE_STRING(g_StrENTER, "ENTER");
+DEFINE_STRING(g_StrEXIT, "EXIT");
+DEFINE_STRING(g_StrSTOP, "STOP");
+DEFINE_STRING(g_StrSTART, "START");
+DEFINE_STRING(g_StrCANCEL, "CANCEL");
+DEFINE_STRING(g_StrJOG, "JOG:");
+DEFINE_STRING(g_StrComma, ",");
+DEFINE_STRING(g_StrUnchecked, STRING_UNCHECKED);
+DEFINE_STRING(g_StrChecked, STRING_CHECKED);
+DEFINE_STRING(g_StrHold, STRING_HOLD);
+DEFINE_STRING(g_StrPlaceholder, STRING_PLACEHOLDER);
