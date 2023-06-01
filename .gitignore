@@ -32,8 +32,8 @@
 *.app
 
 # Visual Studio
-Source/PendantEmulator/.vs/
-Source/PendantEmulator/x64/
+Source/.vs/
+Source/x64/
 *.user
 
 #Other

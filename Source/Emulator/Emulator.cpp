@@ -13,7 +13,7 @@
 
 #include "pch.h"
 #include "framework.h"
-#include "PendantEmulator.h"
+#include "Emulator.h"
 #include "U8G2.h"
 #include "Serial.h"
 #include "EEPROM.h"
@@ -114,7 +114,7 @@ uint16_t g_PhysicalButtons;
 
 #define pinMode(X, Y)
 
-#include "..\Main.h"
+#include "..\Pendant\Main.h"
 
 #ifdef ENABLE_ABORT_BUTTON
 const int ABORT_BUTTON_SIZE = 50;
@@ -125,7 +125,7 @@ const int ABORT_BUTTON_Y = SCREEN_Y - ABORT_BUTTON_SIZE - BUTTON_PADDING_Y;
 // Reads font.bmp and generates font.txt
 void GenerateFont( void )
 {
-	HBITMAP font = (HBITMAP)LoadImage(NULL, "..\\font.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+	HBITMAP font = (HBITMAP)LoadImage(NULL, "Pendant\\font.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
 	BITMAP info;
 	GetObject(font, sizeof(info), &info);
 
@@ -167,7 +167,7 @@ void GenerateFont( void )
 	};
 
 	FILE *f;
-	fopen_s(&f, "..\\font.txt", "wt");
+	fopen_s(&f, "Pendant\\font.txt", "wt");
 	for (int i = 0; i < 128; i++)
 	{
 		int x0 = (i%16) * 8;

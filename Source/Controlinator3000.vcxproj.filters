@@ -1,0 +1,149 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Javascript">
+      <UniqueIdentifier>{dec965d5-0dc3-4a65-a248-061c0237bd21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Pendant">
+      <UniqueIdentifier>{ce9fed4c-67fd-4800-b45c-7cb225f45b95}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Pendant\Arduino">
+      <UniqueIdentifier>{4a7b3396-3404-460d-b806-e1fa7ad9b05f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Pendant\Screens">
+      <UniqueIdentifier>{d8070569-e949-4a72-8b31-911719c2a061}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Pendant\Font">
+      <UniqueIdentifier>{f23a50cd-b1b6-4d5c-914b-2dbc08c00588}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Emulator">
+      <UniqueIdentifier>{850c72ee-fc08-4cfb-96e7-c0dd4e3f442e}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="PendantMacro.js">
+      <Filter>Javascript</Filter>
+    </None>
+    <None Include="Pendant\Pendant.ino">
+      <Filter>Pendant\Arduino</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Pendant\Graphics.h">
+      <Filter>Pendant</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\Input.h">
+      <Filter>Pendant</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\MachineStatus.h">
+      <Filter>Pendant</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\Main.h">
+      <Filter>Pendant</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\RomSettings.h">
+      <Filter>Pendant</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\SpecialStrings.h">
+      <Filter>Pendant</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\_BaseScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\_ScreenClasses.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\AlarmScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\CalibrationScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\DialogScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\JogScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\MacroScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\MainScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\ProbeMenuScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\RunScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\WelcomeScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Pendant\ZProbeScreen.h">
+      <Filter>Pendant\Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="Emulator\framework.h">
+      <Filter>Emulator</Filter>
+    </ClInclude>
+    <ClInclude Include="Emulator\pch.h">
+      <Filter>Emulator</Filter>
+    </ClInclude>
+    <ClInclude Include="Emulator\Emulator.h">
+      <Filter>Emulator</Filter>
+    </ClInclude>
+    <ClInclude Include="Emulator\resource.h">
+      <Filter>Emulator</Filter>
+    </ClInclude>
+    <ClInclude Include="Emulator\Serial.h">
+      <Filter>Emulator</Filter>
+    </ClInclude>
+    <ClInclude Include="Emulator\targetver.h">
+      <Filter>Emulator</Filter>
+    </ClInclude>
+    <ClInclude Include="Emulator\U8G2.h">
+      <Filter>Emulator</Filter>
+    </ClInclude>
+    <ClInclude Include="Emulator\EEPROM.h">
+      <Filter>Emulator</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Pendant\font.bmp">
+      <Filter>Pendant\Font</Filter>
+    </Image>
+    <Image Include="Emulator\Emulator.ico">
+      <Filter>Emulator</Filter>
+    </Image>
+    <Image Include="Emulator\small.ico">
+      <Filter>Emulator</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Pendant\font.txt">
+      <Filter>Pendant\Font</Filter>
+    </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Emulator\pch.cpp">
+      <Filter>Emulator</Filter>
+    </ClCompile>
+    <ClCompile Include="Emulator\Emulator.cpp">
+      <Filter>Emulator</Filter>
+    </ClCompile>
+    <ClCompile Include="Emulator\Serial.cpp">
+      <Filter>Emulator</Filter>
+    </ClCompile>
+    <ClCompile Include="Emulator\U8G2.cpp">
+      <Filter>Emulator</Filter>
+    </ClCompile>
+    <ClCompile Include="Emulator\EEPROM.cpp">
+      <Filter>Emulator</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Emulator\Emulator.rc">
+      <Filter>Emulator</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+</Project>
