@@ -28,5 +28,17 @@
 
 # Executables
 *.exe
+*.exe.recipe
 *.out
 *.app
+
+# Visual Studio
+*.ilk
+*.pdb
+*.idb
+*.res
+*.log
+*.tlog
+*.suo
+*.db
+*.aps
