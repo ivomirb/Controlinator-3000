@@ -28,17 +28,13 @@
 
 # Executables
 *.exe
-*.exe.recipe
 *.out
 *.app
 
 # Visual Studio
-*.ilk
-*.pdb
-*.idb
-*.res
-*.log
-*.tlog
-*.suo
-*.db
-*.aps
+Source/PendantEmulator/.vs/
+Source/PendantEmulator/x64/
+*.user
+
+#Other
+*.bin
