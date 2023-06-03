@@ -4,7 +4,7 @@
 const PENDANT_VERSION = "1.0";
 const PENDANT_BAUD_RATE = 38400;
 
-const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - also ACK
+const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - everything+ACK
 
 // Normally the Arduino Nano is programmed via the USB cable. This requires the Arduino to reset when a serial connection is initiated.
 // If this is the case, set the value to true. The PC will wait 2 seconds after opening the connection before trying to communicate.
@@ -12,6 +12,11 @@ const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - also ACK
 // If this is the case, set the value to false.
 // Also if you use a microcontroller that is programmed via the UPDI pin instead of USB, set this to false as well.
 const ARDUINO_RESETS_ON_CONNECT = true;
+
+// This flag causes the Z Down button in the probing screen to use the G38.3 command instead of $J, which will stop if the probe is touched.
+// It is not entirely safe because slamming into a hard probe at jogging speeds is never safe, but might reduce the damage.
+// It will work better if the probe uses a button with some overtravel capability, like many button-based tool sensors.
+const SAFE_PROBE_JOG = true;
 
 const {
 	SerialPort
@@ -39,7 +44,7 @@ var g_PendantRomSettings = GetDefaultRomSettings();
 var g_TloRefZ = undefined;
 
 var g_Probe;
-var g_ProbeJogDown = false;
+var g_ProbeJog;
 var g_bSafeStopPending = false;
 
 // This table match the names and order in MachineStatus.h
@@ -236,12 +241,6 @@ function HandleStatus(status)
 		g_bSafeStopPending = false;
 	}
 
-	if (g_ProbeJogDown && status.machine.inputs.includes('P')) // probe was hit while jogging down
-	{
-		socket.emit('stop', {stop: false, jog: true, abort: false});
-		g_ProbeJogDown = false;
-	}
-
 	// send to pendant
 	PushStatus(status);
 }
@@ -295,6 +294,11 @@ function HandleJobComplete(data)
 function HandleProbeResult(probe)
 {
 	if (COM_LOG_LEVEL >= 1) { console.log("PROBE RESULT", probe, g_Probe); }
+	if (g_ProbeJog == -1)
+	{
+		g_ProbeJog = undefined;
+		return;
+	}
 	if (g_Probe == undefined)
 	{
 		return;
@@ -338,7 +342,6 @@ function HandleProbeResult(probe)
 
 		gcode += "\n$J=Z" + retract.travel + " F" + feed.toFixed(0);
 		g_Probe = undefined;
-		console.log("PROBE2", gcode)
 		socket.emit('runJob', {
 			data: gcode,
 			isJob: false,
@@ -354,7 +357,6 @@ function HandleProbeResult(probe)
 		feed = Math.max(Math.min(g_Probe.settings.descent2.feed, grblParams["$112"]), 10);
 		gcode += "\nG38.2 Z-" + g_Probe.settings.descent2.travel + " F" + feed.toFixed(0);
 		g_Probe.pass = 2;
-		console.log("PROBE3", gcode)
 		sendGcode(gcode);
 	}
 }
@@ -933,6 +935,11 @@ function HandleProbeCommand(command)
 	}
 	else if (command == "Z+")
 	{
+		if (laststatus.comms.runStatus != "Idle")
+		{
+			// not idle
+			return;
+		}
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z < g_PendantSettings.safeLimitsZ.max)
@@ -946,33 +953,61 @@ function HandleProbeCommand(command)
 				var gcode = "$J=G21 G91 Z100" + " F" + Number(grblParams["$112"]).toFixed(0);
 				sendGcode(gcode);
 		}
+		g_ProbeJog = 1;
 	}
 	else if (command == "Z-")
 	{
+		if (laststatus.comms.runStatus != "Idle" || laststatus.machine.inputs.includes('P'))
+		{
+			// not idle or the probe is touching. can't go any lower
+			return;
+		}
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z > g_PendantSettings.safeLimitsZ.min)
 			{
 				var feed = Math.min(Math.max(g_Probe == undefined ? g_PendantSettings.zProbe.downSpeed : g_Probe.settings.downSpeed, 10), 100);
 				feed = grblParams["$112"] * feed / 100;
-				var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.min.toFixed(3) + " F" + feed.toFixed(0);
+				var gcode;
+				if (SAFE_PROBE_JOG)
+				{
+					gcode = "G38.3 G21 G90 Z" + (g_PendantSettings.safeLimitsZ.min - laststatus.machine.position.offset.z).toFixed(3) + " F" + feed.toFixed(0);
+				}
+				else
+				{
+					gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.min.toFixed(3) + " F" + feed.toFixed(0);
+				}
 				sendGcode(gcode);
-				g_ProbeJogDown = true;
 			}
 		}
 		else
 		{
 			var feed = Math.min(Math.max(g_Probe.settings.downSpeed, 10), 100);
 			feed = grblParams["$112"] * feed / 100;
-			var gcode = "$J=G21 G91 Z-100" + " F" + feed.toFixed(0);
+			var gcode;
+			if (SAFE_PROBE_JOG)
+			{
+				gcode = "G38.3 G21 G91 Z-100" + " F" + feed.toFixed(0);
+			}
+			else
+			{
+				gcode = "$J=G21 G91 Z-100" + " F" + feed.toFixed(0);
+			}
 			sendGcode(gcode);
-			g_ProbeJogDown = true;
 		}
+		g_ProbeJog = -1;
 	}
 	else if (command == "Z=")
 	{
-		socket.emit('stop', {stop: false, jog: true, abort: false});
-		g_ProbeJogDown = false;
+		if (SAFE_PROBE_JOG && g_ProbeJog == -1)
+		{
+			SafeStop();
+		}
+		else if (g_ProbeJog != undefined)
+		{
+			socket.emit('stop', {stop: false, jog: true, abort: false});
+		}
+		g_ProbeJog = undefined;
 	}
 	else if (command.startsWith("START"))
 	{
@@ -995,7 +1030,6 @@ function HandleProbeCommand(command)
 			};
 			var feed = Math.max(Math.min(g_Probe.settings.descent1.feed, grblParams["$112"]), 10);
 			var gcode = "G38.2 G21 G91 Z-" + g_Probe.settings.descent1.travel + " F" + feed.toFixed(0);
-			console.log("PROBE1", gcode)
 			sendGcode(gcode);
 		}
 	}
