@@ -21,15 +21,15 @@ void ProbeMenuScreen::Update( unsigned long time )
 	int8_t button = GetCurrentButton();
 	if (button == BUTTON_PROBE_Z)
 	{
-		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_Z);
+		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_Z, true);
 	}
 	else if (button == BUTTON_PROBE_REF_TOOL)
 	{
-		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_REF_TOOL);
+		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_REF_TOOL, true);
 	}
 	else if ((g_TloState & TLO_HAS_REF) && button == BUTTON_PROBE_NEW_TOOL)
 	{
-		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_NEW_TOOL);
+		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_NEW_TOOL, true);
 	}
 	else if (button == BUTTON_BACK)
 	{

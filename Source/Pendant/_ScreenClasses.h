@@ -325,7 +325,7 @@ public:
 		PROBE_NEW_TOOL,
 	};
 
-	void Activate( unsigned long time, ProbeMode mode );
+	void Activate( unsigned long time, ProbeMode mode, bool bNotify );
 
 	enum
 	{

@@ -77,7 +77,7 @@ void MainScreen::Update( unsigned long time )
 			}
 			else
 			{
-				g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_Z);
+				g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_Z, true);
 			}
 		}
 		else if (button == BUTTON_JOB)

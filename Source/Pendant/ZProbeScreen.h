@@ -99,13 +99,16 @@ void ZProbeScreen::Update( unsigned long time )
 	}
 }
 
-void ZProbeScreen::Activate( unsigned long time, ProbeMode mode )
+void ZProbeScreen::Activate( unsigned long time, ProbeMode mode, bool bNotify )
 {
 	BaseScreen::Activate(time);
 	m_ProbeMode = mode;
-	Serial.print(g_StrPROBE);
-	Serial.print(g_StrENTER);
-	Serial.println(m_ProbeMode);
+	if (bNotify)
+	{
+		Serial.print(g_StrPROBE);
+		Serial.print(g_StrENTER);
+		Serial.println(m_ProbeMode);
+	}
 	m_bConfirmed = false;
 	m_bJogging = false;
 }

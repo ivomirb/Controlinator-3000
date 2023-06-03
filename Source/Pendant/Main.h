@@ -275,6 +275,12 @@ void ProcessCommand( const char *command, unsigned long time )
 		g_RunScreen.Activate(time);
 		return;
 	}
+
+	if (strncmp(command, "PROBESCREEN:", 12) == 0)
+	{
+		g_ZProbeScreen.Activate(time, (ZProbeScreen::ProbeMode)(command[12] - '0'), false);
+		return;
+	}
 }
 
 void setup( void )

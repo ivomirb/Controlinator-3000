@@ -535,6 +535,24 @@ var g_JogJoystick = {X: 0, Y: 0}; // Last received joystick position
 // Last known wheel location in MCS. updated by the wheel and on idle. always in mm
 var g_JogLocationW;
 
+// Begins jogging with the joystick
+function BeginJogXY()
+{
+	g_JogLocationXY =
+	{
+		X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
+		Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
+		Z: laststatus.machine.position.work.z + laststatus.machine.position.offset.z,
+	};
+	// fill the queue with tiny jogs
+	for (var i = 0; i < 20; i++)
+	{
+		var speed = (i+5)/25; // gradually increase the speed
+		QueueJogXY(g_JogJoystick.X*speed, g_JogJoystick.Y*speed, 0.02);
+	}
+}
+
+// Cancels jogging in the joystick
 function CancelJogXY()
 {
 	g_JogLocationXY = undefined;
@@ -545,6 +563,7 @@ function CancelJogXY()
 	}
 }
 
+// Queues a jog increment. dt - time duration in seconds
 function QueueJogXY(joyX, joyY, dt)
 {
 	var feedXY = grblParams["$110"] / 60; // mm/sec
@@ -759,23 +778,6 @@ function HandleJogCommand(command)
 	}
 }
 
-// Begins jogging with the joystick
-function BeginJogXY()
-{
-	g_JogLocationXY =
-	{
-		X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
-		Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
-		Z: laststatus.machine.position.work.z + laststatus.machine.position.offset.z,
-	};
-	// fill queue with jogs
-	for (var i = 0; i < 15; i++)
-	{
-		var speed = (i+5)/20; // gradually increase the speed
-		QueueJogXY(g_JogJoystick.X*speed, g_JogJoystick.Y*speed, 0.02);
-	}
-}
-
 // Shows the job menu
 function HandleJobMenu()
 {
@@ -844,6 +846,38 @@ function SafeStop()
 	g_bSafeStopPending = true;
 }
 
+function SetupProbeMode(probeType)
+{
+	g_Probe = {
+		type: probeType,
+		settings: (probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe),
+		pass: 0
+	};
+	var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
+	if ((probeType != 0 || zProbeThickness >= 0) &&
+		g_Probe.settings.descent1.travel > 0 && g_Probe.settings.descent1.feed &&
+		g_Probe.settings.retract1.travel > 0 && g_Probe.settings.retract1.feed)
+	{
+		if (g_Probe.settings.style == "single")
+		{
+			return;
+		}
+		if (g_Probe.settings.descent2.travel > 0 && g_Probe.settings.descent2.feed &&
+			g_Probe.settings.retract2.travel > 0 && g_Probe.settings.retract2.feed > 0)
+		{
+			return;
+		}
+	}
+	g_Probe = undefined;
+	ShowPendantDialog({
+		title: "===== Probe =======",
+		text: [
+			"The probe setings",
+			"   are invalid."],
+		rButton: ["OK"],
+	});
+}
+
 // Handles the Z probe commands
 function HandleProbeCommand(command)
 {
@@ -870,38 +904,12 @@ function HandleProbeCommand(command)
 						" Machine has to",
 						" be homed before",
 						"using tool probe."],
-					rButton: ["OK"],
-				});
+						lButton: ["IGNORE", function() { WritePort("PROBESCREEN:" + probeType); SetupProbeMode(probeType); }],
+						rButton: ["OK"],
+					});
 				return;
 			}
-			g_Probe = {
-				type: probeType,
-				settings: (probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe),
-				pass: 0
-			};
-			var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
-			if ((probeType != 0 || zProbeThickness >= 0) &&
-				g_Probe.settings.descent1.travel > 0 && g_Probe.settings.descent1.feed &&
-				g_Probe.settings.retract1.travel > 0 && g_Probe.settings.retract1.feed)
-			{
-				if (g_Probe.settings.style == "single")
-				{
-					return;
-				}
-				if (g_Probe.settings.descent2.travel > 0 && g_Probe.settings.descent2.feed &&
-					g_Probe.settings.retract2.travel > 0 && g_Probe.settings.retract2.feed > 0)
-				{
-					return;
-				}
-			}
-			g_Probe = undefined;
-			ShowPendantDialog({
-				title: "===== Probe =======",
-				text: [
-					"The probe setings",
-					"   are invalid."],
-				rButton: ["OK"],
-			});
+			SetupProbeMode(probeType);
 			return;
 		}
 	}
@@ -945,7 +953,7 @@ function HandleProbeCommand(command)
 		{
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z > g_PendantSettings.safeLimitsZ.min)
 			{
-				var feed = Math.min(Math.max(g_Probe.settings.downSpeed, 10), 100);
+				var feed = Math.min(Math.max(g_Probe == undefined ? g_PendantSettings.zProbe.downSpeed : g_Probe.settings.downSpeed, 10), 100);
 				feed = grblParams["$112"] * feed / 100;
 				var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.min.toFixed(3) + " F" + feed.toFixed(0);
 				sendGcode(gcode);
@@ -978,7 +986,7 @@ function HandleProbeCommand(command)
 				return;
 			}
 		}
-		else if (laststatus.comms.runStatus == "Idle" && g_Probe == undefined)
+		else if (laststatus.comms.runStatus == "Idle")
 		{
 			g_Probe = {
 				type: probeType,
@@ -2117,8 +2125,8 @@ window.SelectSettingsTab = function(index)
 	ShowElement($('#PendantTab15'), tab1 && displayUnits == "inches");
 
 	var zStyle = $('#PendantZStyle').val();
-	ShowElement($('#PendantTab21'), tab2);
-	ShowElement($('#PendantTab22,#PendantTab23,#PendantTab25,#PendantTab26'), tab2 && zStyle != "default");
+	ShowElement($('#PendantTab21,#PendantTab22'), tab2);
+	ShowElement($('#PendantTab23,#PendantTab25,#PendantTab26'), tab2 && zStyle != "default");
 	ShowElement($('#PendantTab24,#PendantTab27,#PendantTab28,#PendantTab29'), tab2 && zStyle == "dual");
 
 	ShowElement($('#PendantTab31'), tab3);
