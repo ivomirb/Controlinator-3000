@@ -41,9 +41,9 @@ void RunScreen::Draw( void )
 	DrawText(0, 2, g_StrY);
 	DrawText(0, 3, g_StrZ);
 
-	PrintX(g_TextBuf); DrawText(2, 1, g_TextBuf);
-	PrintY(g_TextBuf); DrawText(2, 2, g_TextBuf);
-	PrintZ(g_TextBuf); DrawText(2, 3, g_TextBuf);
+	PrintCoord(g_TextBuf, g_WorkX); DrawText(2, 1, g_TextBuf);
+	PrintCoord(g_TextBuf, g_WorkY); DrawText(2, 2, g_TextBuf);
+	PrintCoord(g_TextBuf, g_WorkZ); DrawText(2, 3, g_TextBuf);
 
 	uint8_t unusedButtons = 0x70;
 

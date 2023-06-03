@@ -6,12 +6,8 @@ void WelcomeScreen::Draw( void )
 	DrawTextXY(1, 52, STRING_UNCHECKED);
 	u8g2.drawBox(0, 7, 128, 14);
 	u8g2.setColorIndex(0);
-	DrawTextXY(1, 10, g_RomSettings.pendantName);
-/*	DrawText(0,0,"ABCDEFGHIJKLM");
-	DrawText(0,1,"NOPQRSTUVWXYZ");
-	DrawText(0,2,"abcdefghijklm");
-	DrawText(0,3,"nopqrstuvwxyz");
-	DrawText(0,4,"AaBbCcDdEeFfGgHhIi");*/
+	int8_t len = Strlen(g_RomSettings.pendantName);
+	DrawTextXY(64 - (len*7)/2, 10, g_RomSettings.pendantName);
 }
 
 void WelcomeScreen::Update( unsigned long time )

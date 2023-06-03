@@ -175,9 +175,6 @@ const uint8_t g_NE_halfPulseTransitionTable[][4] PROGMEM =
 	{ NE_DEBOUNCE_3, NE_DETENT_1, NE_DEBOUNCE_2, NE_DETENT_1 }  // DETENT_1 0b111
 };
 
-const uint8_t ENCODER_PIN_A = 3;
-const uint8_t ENCODER_PIN_B = 2;
-
 uint8_t *g_aPin_register, *g_bPin_register;
 uint8_t g_aPin_bitmask, g_bPin_bitmask;
 
@@ -226,7 +223,7 @@ void EncoderPinChangeHandler(uint8_t index)
 			g_EncoderLiveState.currentClick = UpClick;
 			if (g_EncoderLiveState.currentValue < ENCODER_MAX_VALUE)
 			{
-				g_EncoderLiveState.currentValue++;
+				g_EncoderLiveState.currentValue--;
 			}
 		}
 		else if ((newStateVariable & NE_DELTA_MASK) == NE_DECREMENT_DELTA)
@@ -234,7 +231,7 @@ void EncoderPinChangeHandler(uint8_t index)
 			g_EncoderLiveState.currentClick = DownClick;
 			if (g_EncoderLiveState.currentValue > ENCODER_MIN_VALUE)
 			{
-				g_EncoderLiveState.currentValue--;
+				g_EncoderLiveState.currentValue++;
 			}
 		}
 		g_EncoderStateChanged = true;
@@ -263,17 +260,14 @@ void EncoderPinBChange( void )
 
 void InitializeEncoder( void )
 {
-	pinMode(ENCODER_PIN_A, INPUT_PULLUP);
-	pinMode(ENCODER_PIN_B, INPUT_PULLUP);
-	g_aPin_register = portInputRegister(digitalPinToPort(ENCODER_PIN_A));
-	g_bPin_register = portInputRegister(digitalPinToPort(ENCODER_PIN_B));
-	g_aPin_bitmask = digitalPinToBitMask(ENCODER_PIN_A);
-	g_bPin_bitmask = digitalPinToBitMask(ENCODER_PIN_B);
+	pinMode(g_EncoderPinA, INPUT_PULLUP);
+	pinMode(g_EncoderPinB, INPUT_PULLUP);
+	g_aPin_register = portInputRegister(digitalPinToPort(g_EncoderPinA));
+	g_bPin_register = portInputRegister(digitalPinToPort(g_EncoderPinB));
+	g_aPin_bitmask = digitalPinToBitMask(g_EncoderPinA);
+	g_bPin_bitmask = digitalPinToBitMask(g_EncoderPinB);
 
-	delay(2);  // Seems to help ensure first reading after pinMode is correct
-//	g_EncoderPinAValue = digitalRead(ENCODER_PIN_A) == HIGH;
-//	g_EncoderPinBValue = digitalRead(ENCODER_PIN_B) == HIGH;
-
+	delay(2); // Seems to help ensure first reading after pinMode is correct
 	g_EncoderPinAValue = ((*g_aPin_register) & g_aPin_bitmask) ? 1 : 0;
 	g_EncoderPinBValue = ((*g_bPin_register) & g_bPin_bitmask) ? 1 : 0;
 
@@ -284,8 +278,8 @@ void InitializeEncoder( void )
 		g_CurrentEncoderState = NE_DETENT_1;
 	}
 
-	attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A), EncoderPinAChange, CHANGE);
-	attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_B), EncoderPinBChange, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(g_EncoderPinA), EncoderPinAChange, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(g_EncoderPinB), EncoderPinBChange, CHANGE);
 }
 
 int16_t EncoderDrainValue( void )

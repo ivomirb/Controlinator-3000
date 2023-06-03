@@ -37,6 +37,12 @@ void DialogScreen::Update( unsigned long time )
 {
 	auto *pState = GetActiveState();
 
+	if (pState->m_ButtonDismissTimer != 0 && time - pState->m_ButtonDismissTimer > 500)
+	{
+		CloseScreen();
+		return;
+	}
+
 	int8_t button = GetCurrentButton();
 	if (button >= 0 && button < 3 && pState->m_Lines[button + 1][0] == CHAR_UNCHECKED)
 	{
@@ -46,7 +52,14 @@ void DialogScreen::Update( unsigned long time )
 	if (pState->m_Buttons[0][0] == '@' && pState->m_CheckFlags == 0 && g_ButtonState == 0)
 	{
 		SendResponse(1);
-		CloseScreen();
+		if (TestBit(pState->m_ButtonWaitFlags, 0))
+		{
+			pState->m_ButtonDismissTimer = time;
+		}
+		else
+		{
+			CloseScreen();
+		}
 		return;
 	}
 
@@ -65,7 +78,14 @@ void DialogScreen::Update( unsigned long time )
 			continue;
 		}
 		SendResponse(i + 1);
-		CloseScreen();
+		if (TestBit(pState->m_ButtonWaitFlags, i))
+		{
+			pState->m_ButtonDismissTimer = time;
+		}
+		else
+		{
+			CloseScreen();
+		}
 		return;
 	}
 }
@@ -95,6 +115,8 @@ void DialogScreen::ParseDialog( const char *str )
 	auto *pState = GetActiveState();
 	pState->m_CheckFlags = 0;
 	pState->m_ButtonHoldFlags = 0;
+	pState->m_ButtonWaitFlags = 0;
+	pState->m_ButtonDismissTimer = 0;
 
 	// parse id
 	pState->m_Id = atol(str);
@@ -118,18 +140,30 @@ void DialogScreen::ParseDialog( const char *str )
 	// parse buttons
 	const char *end = strchr(str, ',');
 	uint8_t len = (uint8_t)(end - str);
-	if (len > MAX_BUTTON_SIZE) len = MAX_BUTTON_SIZE;
 	if (*str == CHAR_HOLD)
 	{
 		pState->m_ButtonHoldFlags |= 1;
 		str++;
 		len--;
 	}
+	if (*str == '!')
+	{
+		pState->m_ButtonWaitFlags |= 1;
+		str++;
+		len--;
+	}
+	if (len > MAX_BUTTON_SIZE) len = MAX_BUTTON_SIZE;
 	memcpy(pState->m_Buttons[0], str, len);
 	pState->m_Buttons[0][len] = 0;
 	str = end + 1;
 
 	len = Strlen(str);
+	if (*str == '!')
+	{
+		pState->m_ButtonWaitFlags |= 2;
+		str++;
+		len--;
+	}
 	if (len > 0 && str[len - 1] == CHAR_HOLD)
 	{
 		pState->m_ButtonHoldFlags |= 2;

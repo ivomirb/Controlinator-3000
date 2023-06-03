@@ -120,7 +120,7 @@
     <Image Include="Pendant\font.bmp" />
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Pendant\font.txt" />
+    <Text Include="Pendant\font.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Emulator\EEPROM.cpp" />

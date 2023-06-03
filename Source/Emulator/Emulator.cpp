@@ -122,7 +122,7 @@ const int ABORT_BUTTON_X = SCREEN_X + 64*BMP_SCALE - ABORT_BUTTON_SIZE/2;
 const int ABORT_BUTTON_Y = SCREEN_Y - ABORT_BUTTON_SIZE - BUTTON_PADDING_Y;
 #endif
 
-// Reads font.bmp and generates font.txt
+// Reads font.bmp and generates font.h
 void GenerateFont( void )
 {
 	HBITMAP font = (HBITMAP)LoadImage(NULL, "Pendant\\font.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
@@ -167,7 +167,7 @@ void GenerateFont( void )
 	};
 
 	FILE *f;
-	fopen_s(&f, "Pendant\\font.txt", "wt");
+	fopen_s(&f, "Pendant\\font.h", "wt");
 	for (int i = 0; i < 128; i++)
 	{
 		int x0 = (i%16) * 8;

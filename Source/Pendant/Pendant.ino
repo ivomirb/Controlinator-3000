@@ -17,7 +17,9 @@ uint16_t ReadButtons( void );
 
 #define U8G2_FULL_BUFFER 0
 
-const int g_JoyPinX = A6;
+const int g_EncoderPinA = 2;
+const int g_EncoderPinB = 3;
+const int g_JoyPinX = A6; // X and Y are swapped to match how the joystick is mounted on the pendant
 const int g_JoyPinY = A7;
 
 #include "Main.h"

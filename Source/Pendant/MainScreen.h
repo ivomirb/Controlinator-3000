@@ -11,7 +11,7 @@ void MainScreen::Draw( void )
 	PrintY(g_TextBuf); DrawText(2, 2, g_TextBuf);
 	PrintZ(g_TextBuf); DrawText(2, 3, g_TextBuf);
 
-	DrawButton(BUTTON_WCS, g_bShowWork ? g_StrWCS : g_StrMCS, 5, false);
+	DrawButton(BUTTON_WCS, g_bWorkSpace ? g_StrWCS : g_StrMCS, 5, false);
 	if (g_MachineStatus == STATUS_IDLE)
 	{
 		DrawButton(BUTTON_PROBE, ROMSTR("Probe>"), 6, false);
@@ -41,7 +41,7 @@ void MainScreen::Update( unsigned long time )
 	int8_t button = GetCurrentButton();
 	if (button == BUTTON_WCS)
 	{
-		g_bShowWork = !g_bShowWork;
+		g_bWorkSpace = !g_bWorkSpace;
 	}
 	else if (g_MachineStatus == STATUS_IDLE)
 	{

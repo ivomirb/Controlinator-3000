@@ -23,6 +23,9 @@ public:
 protected:
 	static int8_t GetCurrentButton( void );
 
+	// Prints a value to the buffer, using the curren mm/inch setting
+	static void PrintCoord( char *buf, float val );
+
 	// Print X/Y/Z to the buffer. Uses the current WCS/MCS and mm/inch settings
 	static void PrintX( char *buf );
 	static void PrintY( char *buf );
@@ -44,9 +47,6 @@ protected:
 	void CloseScreen( void );
 
 private:
-	// Prints a value to the buffer, using the curren mm/inch setting
-	static void PrintCoord( char *buf, float val );
-
 	static void DrawButtonInt( uint8_t button, const char *label, uint8_t labelLen, bool bHold, bool bFlash );
 };
 
@@ -94,17 +94,17 @@ void BaseScreen::PrintCoord( char *buf, float val )
 
 void BaseScreen::PrintX( char *buf )
 {
-	PrintCoord(buf, g_bShowWork ? g_WorkX : (g_WorkX + g_OffsetX));
+	PrintCoord(buf, g_bWorkSpace ? g_WorkX : (g_WorkX + g_OffsetX));
 }
 
 void BaseScreen::PrintY( char *buf )
 {
-	PrintCoord(buf, g_bShowWork ? g_WorkY : (g_WorkY + g_OffsetY));
+	PrintCoord(buf, g_bWorkSpace ? g_WorkY : (g_WorkY + g_OffsetY));
 }
 
 void BaseScreen::PrintZ( char *buf )
 {
-	PrintCoord(buf, g_bShowWork ? g_WorkZ : (g_WorkZ + g_OffsetZ));
+	PrintCoord(buf, g_bWorkSpace ? g_WorkZ : (g_WorkZ + g_OffsetZ));
 }
 
 void BaseScreen::DrawMachineStatus( void )

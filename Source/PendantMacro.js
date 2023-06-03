@@ -154,7 +154,7 @@ function GenerateStatusString(s)
 	else
 	{
 		status = g_StatusMap[s.comms.runStatus];
-		if (status == g_StatusMap.Running && g_JogLocation != undefined)
+		if (status == g_StatusMap.Running && (g_JogLocationXY != undefined || g_JogLocationW != undefined))
 		{
 			status = g_StatusMap.Jog;
 		}
@@ -220,12 +220,12 @@ function HandleStatus(status)
 {
 	if (status.comms.runStatus == "Idle")
 	{
-		// update jog location on every idle
-		if (g_JogLocation != undefined)
+		// update wheel jog location on every idle
+		if (g_JogLocationW != undefined)
 		{
-			g_JogLocation.X = laststatus.machine.position.work.x + laststatus.machine.position.offset.x;
-			g_JogLocation.Y = laststatus.machine.position.work.y + laststatus.machine.position.offset.y;
-			g_JogLocation.Z = laststatus.machine.position.work.z + laststatus.machine.position.offset.z;
+			g_JogLocationW.X = status.machine.position.work.x + status.machine.position.offset.x;
+			g_JogLocationW.Y = status.machine.position.work.y + status.machine.position.offset.y;
+			g_JogLocationW.Z = status.machine.position.work.z + status.machine.position.offset.z;
 		}
 
 		g_bSafeStopPending = false;
@@ -380,9 +380,11 @@ var g_DialogRCallback;
 //    lines can be up to 18 characters
 // dialog.lButton [string, callback] -  optional left button
 //    if the button starts with CHAR_HOLD, it requires long hold
-//    the button is hidden unless all checkboxes are marked
+//    if the button starts with "!", the dialog waits for half second before it is dismissed (CHAR_HOLD is before ! if both are used)
 //    if the button text is "@", it shows no text but is automatically executed when all checkboxes are marked
+//    the button is hidden unless all checkboxes are marked
 // dialog.rButton [string, callback] - optional right button
+//    if the button starts with "!", the dialog waits for half second before it is dismissed
 //    if the button ends with CHAR_HOLD, it requires long hold
 // buttons are up to 14 characters each, but both combined should not exceed 16
 function ShowPendantDialog(dialog)
@@ -525,14 +527,17 @@ function ClampSafeAbsoluteMove(value, delta, axis, inches)
 	return value;
 }
 
-// Last known jog location in MCS. refreshed on idle, incremented by joystick. always in mm
-var g_JogLocation;
+// Last known joystick jog location in MCS. always in mm
+var g_JogLocationXY;
 var g_JogTimer;
 var g_JogJoystick = {X: 0, Y: 0}; // Last received joystick position
 
+// Last known wheel location in MCS. updated by the wheel and on idle. always in mm
+var g_JogLocationW;
+
 function CancelJogXY()
 {
-	g_JogLocation = undefined;
+	g_JogLocationXY = undefined;
 	if (g_JogTimer != undefined)
 	{
 		clearInterval(g_JogTimer);
@@ -540,15 +545,15 @@ function CancelJogXY()
 	}
 }
 
-function QueueXYJog(joyX, joyY, dt)
+function QueueJogXY(joyX, joyY, dt)
 {
 	var feedXY = grblParams["$110"] / 60; // mm/sec
 
 	// requested move in mm
-	var newX = ClampSafeAbsoluteMove(g_JogLocation.X, joyX * feedXY * dt / 10, 'X', false);
-	var newY = ClampSafeAbsoluteMove(g_JogLocation.Y, joyY * feedXY * dt / 10, 'Y', false);
-	var dx = newX - g_JogLocation.X;
-	var dy = newY - g_JogLocation.Y;
+	var newX = ClampSafeAbsoluteMove(g_JogLocationXY.X, joyX * feedXY * dt / 10, 'X', false);
+	var newY = ClampSafeAbsoluteMove(g_JogLocationXY.Y, joyY * feedXY * dt / 10, 'Y', false);
+	var dx = newX - g_JogLocationXY.X;
+	var dy = newY - g_JogLocationXY.Y;
 
 	if (dx != 0 || dy != 0)
 	{
@@ -558,8 +563,9 @@ function QueueXYJog(joyX, joyY, dt)
 		var gcode = "$J=G53 G90 G21" + " X" + newX.toFixed(3) + " Y" + newY.toFixed(3) + " F" + feed.toFixed(0);
 		sendGcode(gcode);
 	}
-	g_JogLocation.X = newX;
-	g_JogLocation.Y = newY;
+	g_JogLocationXY.X = newX;
+	g_JogLocationXY.Y = newY;
+
 }
 
 // Handles the jog commands from the pendant
@@ -672,9 +678,9 @@ function HandleJogCommand(command)
 	if (command[0] == 'W')
 	{
 		// hand wheel
-		if (g_JogLocation == undefined)
+		if (g_JogLocationW == undefined)
 		{
-			g_JogLocation =
+			g_JogLocationW =
 			{
 				X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
 				Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
@@ -692,13 +698,13 @@ function HandleJogCommand(command)
 		var count = Number(command.substring(3, mul));
 		var rate = Number(command.substring(mul + 1));
 
-		var absValue = g_JogLocation[axis];
+		var absValue = g_JogLocationW[axis];
 		if (inches) { absValue /= 25.4; }
 
 		var newValue = ClampSafeAbsoluteMove(absValue, count * rate, axis, inches);
 		if (newValue == absValue) { return; }
 
-		g_JogLocation[axis] = inches ? (newValue * 25.4) : newValue;
+		g_JogLocationW[axis] = inches ? (newValue * 25.4) : newValue;
 
 		var feed;
 		switch (axis)
@@ -721,7 +727,7 @@ function HandleJogCommand(command)
 		if (xy[0] == 0 && xy[1] == 0)
 		{
 			// joystick is released, stop immediately
-			if (g_JogLocation != undefined)
+			if (g_JogLocationXY != undefined)
 			{
 				socket.emit('stop', {stop: false, jog: true, abort: false});
 			}
@@ -729,33 +735,44 @@ function HandleJogCommand(command)
 			return;
 		}
 
-		if (g_JogLocation == undefined)
-		{
-			g_JogLocation =
-			{
-				X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
-				Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
-				Z: laststatus.machine.position.work.z + laststatus.machine.position.offset.z,
-			};
-		}
-
 		if (g_JogTimer == undefined)
 		{
-			// fill queue with jogs
-			for (var i = 0; i < 15; i++)
+			if (laststatus.comms.runStatus == "Idle")
 			{
-				var speed = (i+5)/20; // gradually increase the speed
-				QueueXYJog(g_JogJoystick.X*speed, g_JogJoystick.Y*speed, 0.02);
+				BeginJogXY();
 			}
-
 			g_JogTimer = setInterval(function()
 			{
-				if (g_JogLocation != undefined)
+				if (g_JogLocationXY == undefined)
 				{
-					QueueXYJog(g_JogJoystick.X, g_JogJoystick.Y, 0.1);
+					if (laststatus.comms.runStatus == "Idle")
+					{
+						BeginJogXY();
+					}
+				}
+				else
+				{
+					QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, 0.1);
 				}
 			}, 100);
 		}
+	}
+}
+
+// Begins jogging with the joystick
+function BeginJogXY()
+{
+	g_JogLocationXY =
+	{
+		X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
+		Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
+		Z: laststatus.machine.position.work.z + laststatus.machine.position.offset.z,
+	};
+	// fill queue with jogs
+	for (var i = 0; i < 15; i++)
+	{
+		var speed = (i+5)/20; // gradually increase the speed
+		QueueJogXY(g_JogJoystick.X*speed, g_JogJoystick.Y*speed, 0.02);
 	}
 }
 
@@ -778,7 +795,7 @@ function HandleJobMenu()
 		ShowPendantDialog({
 			title: " = Job Checklist =",
 			text: text,
-			lButton: ["@", function () { WritePort("JOBSCREEN"); }],
+			lButton: ["!@", function () { WritePort("JOBSCREEN"); }],
 			rButton: ["Back"],
 		});
 	}
@@ -1666,7 +1683,7 @@ const g_SettingsContent = `
 
 <div id="PendantTab12" class="row mb-2">
   <label class="cell-sm-4 pt-1" title="Enter text to display on the pendant boot screen.
-This setting can only be edited while the pendant is connected.">Pendant name (up to 18 chars)</label>
+This setting can only be edited while the pendant is connected.">Pendant Name (up to 18 chars)</label>
   <div class="cell-sm-6">
     <input id="PendantName" data-role="input" data-clear-button="false" data-editable="true" />
   </div>
@@ -1698,7 +1715,7 @@ This setting can only be edited while the pendant is connected.">Pendant name (u
 <div id="PendantTab16" class="row">
   <label class="cell-sm-4" title="Check if you want the spindle to automatically stop when a job is paused.
 This is done by triggering the door event. Resuming the job will automatically start the spindle, wait 4 seconds, then resume the motion.
-If unchecked, you can still stop the spindle from the pendant using the RPM0 button.">Stop spindle on pause</label>
+If unchecked, you can still stop the spindle from the pendant using the RPM0 button.">Stop Spindle on Pause</label>
   <div class="cell-sm-6">
     <input id="PendantPauseSpindle" type="checkbox" data-role="checkbox" data-style="2" checked />
   </div>
@@ -1746,8 +1763,8 @@ The names are separated by |. Each name is up to 16 characters">Job Checklist</l
   </div>
 </div>
 
-<div id="PendantTab21" class="row mb-2">
-  <label class="cell-sm-3 pt-1">Z probe sequence</label>
+<div id="PendantTab21" class="row  mt-3 mb-2">
+  <label class="cell-sm-3 pt-1">Z Probe Sequence</label>
   <div class="cell-sm-4">
   <select id="PendantZStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 1) { SelectSettingsTab(1); }">
     <option value="single">Single Pass</option>
@@ -1822,8 +1839,8 @@ Use shorter distance and slower speed than the first pass for better accuracy">P
   </div>
 </div>
 
-<div id="PendantTab31" class="row mb-2">
-  <label class="cell-sm-3 pt-1">Tool probe sequence</label>
+<div id="PendantTab31" class="row mt-3 mb-2">
+  <label class="cell-sm-3 pt-1">Tool Probe Sequence</label>
   <div class="cell-sm-4">
   <select id="PendantToolStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 2) { SelectSettingsTab(2); }">
     <option value="disable">Disabled</option>

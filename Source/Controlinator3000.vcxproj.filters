@@ -120,7 +120,7 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="Pendant\font.txt">
+    <Text Include="Pendant\font.h">
       <Filter>Pendant\Font</Filter>
     </Text>
   </ItemGroup>

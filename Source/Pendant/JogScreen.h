@@ -76,7 +76,7 @@ void JogScreen::Draw( void )
 		DrawText(2, 3, g_TextBuf);
 	}
 
-	DrawText(13, 1, g_bShowWork ? g_StrWCS : g_StrMCS);
+	DrawText(13, 1, g_bWorkSpace ? g_StrWCS : g_StrMCS);
 	if ((pState->m_Axis & (pState->m_Axis-1)) == 0)
 	{
 		// only one axis is selected
@@ -85,10 +85,10 @@ void JogScreen::Draw( void )
 		int8_t len = g_bShowInches ? Sprintf(g_TextBuf, "%s%1d.%03d", verb, rate/1000, rate%1000) : Sprintf(g_TextBuf, "%s%2d.%02d", verb, rate/100, rate%100);
 		DrawButton(BUTTON_RATE, g_TextBuf, len, pState->m_bShowRound);
 
-		if (g_MachineStatus == STATUS_IDLE)
+		if (pState->m_bShowActions)
 		{
 			DrawButton(BUTTON_GOTO0, ROMSTR("To 0"), 4, true);
-			if (g_bShowWork)
+			if (g_bWorkSpace)
 			{
 				DrawButton(BUTTON_SET0, ROMSTR("Set 0"), 5, true);
 			}
@@ -126,6 +126,20 @@ void JogScreen::Update( unsigned long time )
 
 	// must be before setting m_LastInputTime, otherwise the STOP button will dismiss itself
 	pState->m_bShowStop = g_bCanShowStop && (time - pState->m_LastInputTime > SHOW_STOP_TIME); // half second of no idle and no input
+	if (pState->m_bShowActions)
+	{
+		if (g_MachineStatus < STATUS_IDLE)
+		{
+			pState->m_bShowActions = false; // hide actions as soon as not idle
+		}
+	}
+	else
+	{
+		if (time - g_LastBusyTime > 250)
+		{
+			pState->m_bShowActions = true; // delay showing the actions by 250ms to reduce flicker
+		}
+	}
 
 	if (g_ButtonState != 0)
 	{
@@ -157,7 +171,7 @@ void JogScreen::Update( unsigned long time )
 	}
 	else if (button == BUTTON_WCS)
 	{
-		g_bShowWork = !g_bShowWork;
+		g_bWorkSpace = !g_bWorkSpace;
 	}
 	else if (button == BUTTON_BACK)
 	{
@@ -180,11 +194,11 @@ void JogScreen::Update( unsigned long time )
 			uint16_t rate = m_JogRates[m_Rate];
 			if (g_bShowInches)
 			{
-				Sprintf(g_TextBuf, "RI%c%c%d.%03d", g_bShowWork ? 'L' : 'G', g_AxisName[pState->m_Axis], rate/1000, rate%1000);
+				Sprintf(g_TextBuf, "RI%c%c%d.%03d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], rate/1000, rate%1000);
 			}
 			else
 			{
-				Sprintf(g_TextBuf, "RM%c%c%d.%02d", g_bShowWork ? 'L' : 'G', g_AxisName[pState->m_Axis], rate/100, rate%100);
+				Sprintf(g_TextBuf, "RM%c%c%d.%02d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], rate/100, rate%100);
 			}
 			Serial.println(g_TextBuf);
 		}
@@ -193,9 +207,9 @@ void JogScreen::Update( unsigned long time )
 			m_Rate = (m_Rate + 1) % m_JogRateCount;
 		}
 
-		if (g_MachineStatus == STATUS_IDLE)
+		if (pState->m_bShowActions && g_MachineStatus == STATUS_IDLE)
 		{
-			if (TestBit(g_ButtonHold, BUTTON_SET0) && g_bShowWork)
+			if (TestBit(g_ButtonHold, BUTTON_SET0) && g_bWorkSpace)
 			{
 				Sprintf(g_TextBuf, "SET0:%c", g_AxisName[pState->m_Axis]);
 				Serial.println(g_TextBuf);
@@ -203,7 +217,7 @@ void JogScreen::Update( unsigned long time )
 			else if (TestBit(g_ButtonHold, BUTTON_GOTO0))
 			{
 				Serial.print(g_StrJOG);
-				Sprintf(g_TextBuf, "0%c%c", g_bShowWork ? 'L' : 'G', g_AxisName[pState->m_Axis]);
+				Sprintf(g_TextBuf, "0%c%c", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis]);
 				Serial.println(g_TextBuf);
 			}
 		}
@@ -265,6 +279,8 @@ void JogScreen::Activate( unsigned long time )
 	auto *pState = GetActiveState();
 	pState->m_LastInputTime = time;
 	pState->m_RateDownTime = 0;
+	pState->m_bShowStop = false;
+	pState->m_bShowActions = true;
 	pState->m_bShowRound = false;
 	GetJoystick(&pState->m_OldJoyX, &pState->m_OldJoyY);
 	EncoderDrainValue();

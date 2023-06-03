@@ -97,6 +97,8 @@ private:
 		char m_Buttons[2][MAX_BUTTON_SIZE + 1];
 		uint8_t m_CheckFlags:3;
 		uint8_t m_ButtonHoldFlags:2;
+		uint8_t m_ButtonWaitFlags:2;
+		unsigned long m_ButtonDismissTimer;
 
 #ifdef USE_SHARED_STATE
 	};
@@ -140,6 +142,7 @@ private:
 		unsigned long m_RateDownTime; // time of pressing the Rate button
 		uint8_t m_Axis:4; // current axis - one bit for X, Y and Z
 		uint8_t m_bShowStop:1; // show the stop button
+		uint8_t m_bShowActions:1; // show the actions to do during idle
 		uint8_t m_bShowRound:1; // show Round instead of Rate
 
 		// previous quantized joystick position

@@ -4,7 +4,7 @@
 
 const uint8_t g_Font[] U8X8_PROGMEM =
 {
-#include "d:\work\projects\pendant\font.txt"
+#include "font.h"
 };
 
 char g_TextBuf[20];
@@ -26,12 +26,13 @@ unsigned long g_CurrentTime;
 unsigned long g_LastPingTime;
 unsigned long g_LastPongTime;
 unsigned long g_LastIdleTime;
+unsigned long g_LastBusyTime;
 bool g_bCanShowStop;
 
 // coordinate systems
 float g_WorkX, g_WorkY, g_WorkZ;
 float g_OffsetX, g_OffsetY, g_OffsetZ; // machine = work + offset
-bool g_bShowWork = true;
+bool g_bWorkSpace = true;
 bool g_bShowInches = true;
 bool g_bJobRunning = false;
 
@@ -354,6 +355,10 @@ void loop( void )
 	if (g_MachineStatus >= STATUS_IDLE)
 	{
 		g_LastIdleTime = time;
+	}
+	else
+	{
+		g_LastBusyTime = time;
 	}
 
 	g_bCanShowStop = (time - g_LastIdleTime > SHOW_STOP_TIME);
