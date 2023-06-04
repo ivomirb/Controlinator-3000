@@ -51,6 +51,7 @@ char SerialEmulator::read( void )
 void SerialEmulator::Init(  HWND output )
 {
 	m_Output = output;
+	SendMessage(m_Output, EM_SETLIMITTEXT, 65536, 0);
 	InitializeCriticalSection(&m_InputLock);
 
 	m_ComPort = CreateFile("\\\\.\\COM14", GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0);

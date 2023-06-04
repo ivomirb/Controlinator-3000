@@ -15,7 +15,7 @@ char g_TextBuf[20];
 #include "Input.h"
 #include "MachineStatus.h"
 
-const unsigned long PING_TIME = 2000; // 2 seconds of no PONG will disconnect
+const unsigned long PING_TIME = 5000; // 5 seconds of no PONG will disconnect
 const unsigned long SHOW_STOP_TIME = 500; // after 500ms after the last idle, allow showing s STOP button
 
 ///////////////////////////////////////////////////////////////////////////////

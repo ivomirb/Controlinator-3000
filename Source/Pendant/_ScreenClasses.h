@@ -338,7 +338,8 @@ public:
 	};
 
 	uint8_t m_bConfirmed : 1;
-	uint8_t m_bJogging : 1;
+	uint8_t m_bJoggingUp : 1;
+	uint8_t m_bJoggingDown : 1;
 	uint8_t m_ProbeMode : 2;
 };
 

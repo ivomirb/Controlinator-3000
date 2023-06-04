@@ -6,13 +6,27 @@ void ZProbeScreen::Draw( void )
 {
 	DrawMachineStatus();
 	uint8_t unusedButtons = 0x78;
-	if (m_bConfirmed && g_MachineStatus == STATUS_IDLE)
+	if (m_bJoggingUp)
+	{
+		u8g2.drawBox(0, g_Rows[2] - 1, 4*7 + 2, 10);
+		u8g2.setColorIndex(0);
+	}
+	DrawText(0, 2, ROMSTR("Z Up"));
+	u8g2.setColorIndex(1);
+	if (m_bJoggingDown)
+	{
+		u8g2.drawBox(0, g_Rows[3] - 1, 6*7 + 2, 10);
+		u8g2.setColorIndex(0);
+	}
+	DrawText(0, 3, ROMSTR("Z Down"));
+	u8g2.setColorIndex(1);
+
+	if (g_MachineStatus == STATUS_IDLE && m_bConfirmed)
 	{
 		DrawButton(BUTTON_PROBE, ROMSTR("Probe"), 5, true);
 		unusedButtons &= ~(1 << BUTTON_PROBE);
 	}
-	DrawButton(BUTTON_UP, ROMSTR("Z Up"), 4, false);
-	DrawButton(BUTTON_DOWN, ROMSTR("Z Down"), 6, false);
+
 	DrawButton(BUTTON_BACK, g_StrBack, 4, false);
 	DrawText(0, 1, m_bConfirmed ? g_StrChecked : g_StrUnchecked);
 	if (m_ProbeMode == PROBE_Z)
@@ -35,23 +49,26 @@ void ZProbeScreen::Draw( void )
 void ZProbeScreen::Update( unsigned long time )
 {
 	int8_t button = GetCurrentButton();
-	if (button == BUTTON_UP)
+	if (g_MachineStatus == STATUS_IDLE && (time - g_LastBusyTime > 500) && !m_bJoggingUp && !m_bJoggingDown)
 	{
-		Serial.print(g_StrPROBE);
-		Serial.println(ROMSTR("Z+"));
-		m_bJogging = true;
+		if (TestBit(g_ButtonState, BUTTON_UP))
+		{
+			Serial.print(g_StrPROBE);
+			Serial.println(ROMSTR("Z+"));
+			m_bJoggingUp = true;
+		}
+		else if (TestBit(g_ButtonState, BUTTON_DOWN))
+		{
+			Serial.print(g_StrPROBE);
+			Serial.println(ROMSTR("Z-"));
+			m_bJoggingDown = true;
+		}
 	}
-	else if (button == BUTTON_DOWN)
-	{
-		Serial.print(g_StrPROBE);
-		Serial.println(ROMSTR("Z-"));
-		m_bJogging = true;
-	}
-	else if (m_bJogging && !TestBit(g_ButtonState, BUTTON_UP) && !TestBit(g_ButtonState, BUTTON_DOWN))
+	if ((m_bJoggingUp && !TestBit(g_ButtonState, BUTTON_UP)) || (m_bJoggingDown && !TestBit(g_ButtonState, BUTTON_DOWN)))
 	{
 		Serial.print(g_StrPROBE);
 		Serial.println(ROMSTR("Z="));
-		m_bJogging = false;
+		m_bJoggingUp = m_bJoggingDown = false;
 	}
 
 	if (m_ProbeMode != PROBE_Z)
@@ -110,15 +127,17 @@ void ZProbeScreen::Activate( unsigned long time, ProbeMode mode, bool bNotify )
 		Serial.println(m_ProbeMode);
 	}
 	m_bConfirmed = false;
-	m_bJogging = false;
+	m_bJoggingUp = false;
+	m_bJoggingDown = false;
 }
 
 void ZProbeScreen::Deactivate( void )
 {
-	if (m_bJogging)
+	if (m_bJoggingUp || m_bJoggingDown)
 	{
 		Serial.print(g_StrPROBE);
 		Serial.println(ROMSTR("Z="));
-		m_bJogging = false;
+		m_bJoggingUp = false;
+		m_bJoggingDown = false;
 	}
 }

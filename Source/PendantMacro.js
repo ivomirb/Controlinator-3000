@@ -41,10 +41,11 @@ var g_LastStatus2Str = undefined;
 var g_PendantSettings = GetDefaultSettings();
 var g_PendantRomSettings = GetDefaultRomSettings();
 
-var g_TloRefZ = undefined;
+var g_TloRefZ = undefined; // absolute Z of the tool probe measured with the reference tool
+var g_ProbeZDownFeed = 50; // feed rate for the Z Down button (in % of $112)
+var g_ProbeJog; // -1 - up, 1 - down
+var g_LastProbeZ;
 
-var g_Probe;
-var g_ProbeJog;
 var g_bSafeStopPending = false;
 
 // This table match the names and order in MachineStatus.h
@@ -93,9 +94,9 @@ function GetDefaultSettings()
 		zProbe: {
 			style: "single",
 			downSpeed: 50,
-			descent1: {travel: 15, feed:  100},
+			seek1: {travel: 15, feed:  100},
 			retract1: {travel:  5, feed: 1000},
-			descent2: {travel:  1, feed:   50},
+			seek2: {travel:  1, feed:   50},
 			retract2: {travel:  5, feed: 1000},
 			thickness: undefined,
 		},
@@ -104,9 +105,9 @@ function GetDefaultSettings()
 		toolProbe: {
 			style: "disable",
 			downSpeed: 50,
-			descent1: {travel: 15, feed:  100},
+			seek1: {travel: 15, feed:  100},
 			retract1: {travel:  5, feed: 1000},
-			descent2: {travel:  1, feed:   50},
+			seek2: {travel:  1, feed:   50},
 			retract2: {travel:  5, feed: 1000},
 			location: {X: 0, Y: 0, Z: 0},
 		},
@@ -159,7 +160,7 @@ function GenerateStatusString(s)
 	else
 	{
 		status = g_StatusMap[s.comms.runStatus];
-		if (status == g_StatusMap.Running && (g_JogLocationXY != undefined || g_JogLocationW != undefined))
+		if (status == g_StatusMap.Running && (g_JogLocationXY != undefined || g_JogLocationW != undefined || g_ProbeJog))
 		{
 			status = g_StatusMap.Jog;
 		}
@@ -226,18 +227,12 @@ function HandleStatus(status)
 	if (status.comms.runStatus == "Idle")
 	{
 		// update wheel jog location on every idle
-		if (g_JogLocationW != undefined)
-		{
-			g_JogLocationW.X = status.machine.position.work.x + status.machine.position.offset.x;
-			g_JogLocationW.Y = status.machine.position.work.y + status.machine.position.offset.y;
-			g_JogLocationW.Z = status.machine.position.work.z + status.machine.position.offset.z;
-		}
-
+		g_JogLocationW = undefined;
 		g_bSafeStopPending = false;
 	}
 	else if (g_bSafeStopPending && status.comms.runStatus == "Hold:0")
 	{
-		socket.emit('serialInject', String.fromCharCode(0x18)); // ctrl-x (soft reset)
+		socket.emit('stop', {stop: true, jog: false, abort: false});
 		g_bSafeStopPending = false;
 	}
 
@@ -248,116 +243,39 @@ function HandleStatus(status)
 // Handles the job completion event
 function HandleJobComplete(data)
 {
-	if (COM_LOG_LEVEL >= 1)
+	if (COM_LOG_LEVEL >= 1 && (data.jobStartTime || data.jobCompletedMsg.length != ""))
 	{
-		if (data.jobStartTime || data.jobCompletedMsg.length != "")
-		{
-			console.log("JOB COMPLETED", data);
-		}
+		console.log("JOB COMPLETED", data);
 	}
 
-	if (g_PendantPort && !data.failed && laststatus.comms.runStatus != "Alarm")
-	{
-		if (data.jobStartTime && data.jobEndTime)
-		{
-			// this is a real job
-			ShowPendantDialog({
-				title: "====== Done ======",
-				text: [
-					"  Job completed",
-					"   successfully"],
-				rButton: ["OK"],
-			});
-		}
-		if (data.jobCompletedMsg.startsWith("Probe Complete"))
-		{
-			data.jobCompletedMsg = "";
-			ShowPendantDialog({
-				title: "= Probe Complete =",
-				text: [
-					" Z = " + laststatus.machine.probe.z + " mm",
-					" Disconnect probe",
-					],
-				rButton: ["OK", function()
-				{
-					if (Metro.dialog.isOpen('#completeMsgModal'))
-					{
-						Metro.dialog.close('#completeMsgModal');
-					}
-				}],
-			});
-		}
-	}
-}
-
-// Handles the completion of probing
-function HandleProbeResult(probe)
-{
-	if (COM_LOG_LEVEL >= 1) { console.log("PROBE RESULT", probe, g_Probe); }
-	if (g_ProbeJog == -1)
-	{
-		g_ProbeJog = undefined;
-		return;
-	}
-	if (g_Probe == undefined)
+	if (g_PendantPort == undefined)
 	{
 		return;
 	}
-	if (probe.state == 0)
+
+	if (!data.failed && data.jobStartTime && data.jobEndTime && laststatus.comms.runStatus != "Alarm")
 	{
+		// this is a real job
 		ShowPendantDialog({
-			title: "== Probe Failed ==",
+			title: "====== Done ======",
 			text: [
-				" Disconnect probe"],
-				rButton: ["OK"],
-			});
-		g_Probe = undefined;
+				"  Job completed",
+				"   successfully"],
+			rButton: ["OK"],
+		});
 		return;
 	}
-	if (g_Probe.pass == 2 || g_Probe.settings.style == "single")
-	{
-		// probing finished
-		var retract = g_Probe.settings["retract" + g_Probe.pass];
-		var feed = Math.max(Math.min(retract.feed, grblParams["$112"]), 10);
-		var gcode = "G21 G91\nG4 P0.4\n";
 
-		if (g_Probe.type == 0)
-		{
-			// z-probe
-			var zProbeThickness = g_PendantSettings.zProbeThickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
-			gcode += "G10 P0 L20 Z" + Number(zProbeThickness).toFixed(3);
-		}
-		else if (g_Probe.type == 1)
-		{
-			// reference tool - just remember the current Z
-			g_TloRefZ = probe.z;
-		}
-		else if (g_Probe.type == 2)
-		{
-			// new tool - adjust work Z
-			var delta = probe.z - g_TloRefZ;
-			g_TloRefZ = probe.z;
-			gcode += "G10 P0 L2 Z" + (laststatus.machine.position.offset.z + delta).toFixed(3);
-		}
-
-		gcode += "\n$J=Z" + retract.travel + " F" + feed.toFixed(0);
-		g_Probe = undefined;
-		socket.emit('runJob', {
-			data: gcode,
-			isJob: false,
-			completedMsg: "Probe Complete",
-			fileName: ""
-		});
-	}
-	else
+	if (data.jobCompletedMsg.startsWith("Pendant Probe"))
 	{
-		// begin second pass
-		var feed = Math.max(Math.min(g_Probe.settings.retract1.feed, grblParams["$112"]), 10);
-		var gcode = "G21 G91\nG1 Z" + g_Probe.settings.retract1.travel + " F" + feed.toFixed(0);
-		feed = Math.max(Math.min(g_Probe.settings.descent2.feed, grblParams["$112"]), 10);
-		gcode += "\nG38.2 Z-" + g_Probe.settings.descent2.travel + " F" + feed.toFixed(0);
-		g_Probe.pass = 2;
-		sendGcode(gcode);
+		// probing job
+		var probeType = Number(data.jobCompletedMsg[13]);
+		data.jobCompletedMsg = "";
+		if (!data.failed)
+		{
+			HandleProbeJobComplete(probeType, g_LastProbeZ);
+		}
+		g_LastProbeZ = undefined;
 	}
 }
 
@@ -481,6 +399,13 @@ function PushSettings(pushRomSettings)
 	}
 }
 
+// Issues feed hold, and then soft reset once Hold:0 is reached
+function SafeStop()
+{
+	socket.emit('serialInject', '!'); // feed hold
+	g_bSafeStopPending = true;
+}
+
 // Stops the current operation as gently as possible
 function SmartStop()
 {
@@ -490,12 +415,12 @@ function SmartStop()
 	}
 	else if (laststatus.comms.runStatus == "Run")
 	{
-		// pause, wait for hold, then stop
-		socket.emit('stop', {stop: true, jog: false, abort: false});
+		// pause, wait for hold0, then stop
+		SafeStop();
 	}
 	else
 	{
-		// immediate abourt in all other cases
+		// immediate abort in all other cases
 		socket.emit('stop', {stop: false, jog: false, abort: true});
 	}
 }
@@ -534,7 +459,7 @@ var g_JogLocationXY;
 var g_JogTimer;
 var g_JogJoystick = {X: 0, Y: 0}; // Last received joystick position
 
-// Last known wheel location in MCS. updated by the wheel and on idle. always in mm
+// Last known wheel location in MCS. updated by the wheel. reset on idle. always in mm
 var g_JogLocationW;
 
 // Begins jogging with the joystick
@@ -841,36 +766,25 @@ function HandleJobCommand(command)
 	}
 }
 
-// Issues feed hold, and then soft reset once Hold:0 is reached
-function SafeStop()
-{
-	socket.emit('serialInject', '!'); // feed hold
-	g_bSafeStopPending = true;
-}
-
 function SetupProbeMode(probeType)
 {
-	g_Probe = {
-		type: probeType,
-		settings: (probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe),
-		pass: 0
-	};
+	// validate probe settings
+	var settings  = probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe;
 	var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
 	if ((probeType != 0 || zProbeThickness >= 0) &&
-		g_Probe.settings.descent1.travel > 0 && g_Probe.settings.descent1.feed &&
-		g_Probe.settings.retract1.travel > 0 && g_Probe.settings.retract1.feed)
+		settings.seek1.travel > 0 && settings.seek1.feed &&
+		settings.retract1.travel > 0 && settings.retract1.feed)
 	{
-		if (g_Probe.settings.style == "single")
+		if (settings.style == "single")
 		{
 			return;
 		}
-		if (g_Probe.settings.descent2.travel > 0 && g_Probe.settings.descent2.feed &&
-			g_Probe.settings.retract2.travel > 0 && g_Probe.settings.retract2.feed > 0)
+		if (settings.seek2.travel > 0 && settings.seek2.feed &&
+			settings.retract2.travel > 0 && settings.retract2.feed > 0)
 		{
 			return;
 		}
 	}
-	g_Probe = undefined;
 	ShowPendantDialog({
 		title: "===== Probe =======",
 		text: [
@@ -880,13 +794,53 @@ function SetupProbeMode(probeType)
 	});
 }
 
+// Handles a successful probe job
+function HandleProbeJobComplete(probeType, probeZ)
+{
+	if (probeType == 0)
+	{
+		// z-probe
+		var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
+		var gcode = "G10 P0 L2 Z" + (probeZ - zProbeThickness).toFixed(3);
+		sendGcode(gcode);
+	}
+	else if (probeType == 1)
+	{
+		// reference tool - just remember the current Z
+		g_TloRefZ = probeZ;
+	}
+	else if (probeType == 2)
+	{
+		// new tool - adjust work Z
+		var delta = probeZ - g_TloRefZ;
+		g_TloRefZ = probeZ;
+		var gcode = "G10 P0 L2 Z" + (laststatus.machine.position.offset.z + delta).toFixed(3);
+		sendGcode(gcode);
+	}
+
+	ShowPendantDialog({
+		title: "= Probe Complete =",
+		text: [
+			" Z = " + probeZ + " mm",
+			" Disconnect probe",
+			],
+		rButton: ["OK", function()
+		{
+			if (Metro.dialog.isOpen('#completeMsgModal'))
+			{
+				Metro.dialog.close('#completeMsgModal');
+			}
+		}],
+	});
+}
+
 // Handles the Z probe commands
 function HandleProbeCommand(command)
 {
 	if (command.startsWith("ENTER"))
 	{
-		g_Probe = undefined;
 		var probeType = Number(command[5]);
+		g_ProbeZDownFeed = Math.min(Math.max((probeType == 1 || probeType == 2) ? g_PendantSettings.toolProbe.downSpeed : g_PendantSettings.zProbe.downSpeed, 10), 100);
 		if (probeType == 0 && g_PendantSettings.zProbe.style == "default")
 		{
 			if (!Metro.dialog.isOpen('#xyzProbeWindow'))
@@ -897,7 +851,6 @@ function HandleProbeCommand(command)
 		}
 		else
 		{
-			// validate settings
 			if (probeType != 0 && !laststatus.machine.modals.homedRecently)
 			{
 				ShowPendantDialog({
@@ -930,28 +883,26 @@ function HandleProbeCommand(command)
 			resetJogModeAfterProbe();
 			Metro.dialog.close('#xyzProbeWindow');
 		}
-		g_Probe = undefined;
 		return;
 	}
 	else if (command == "Z+")
 	{
 		if (laststatus.comms.runStatus != "Idle")
 		{
-			// not idle
 			return;
 		}
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z < g_PendantSettings.safeLimitsZ.max)
 			{
-				var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.max.toFixed(3) + " F" + Number(grblParams["$112"]).toFixed(0);
+				gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.max.toFixed(3) + " F" + Number(grblParams["$112"]).toFixed(0);
 				sendGcode(gcode);
 			}
 		}
 		else
 		{
-				var gcode = "$J=G21 G91 Z100" + " F" + Number(grblParams["$112"]).toFixed(0);
-				sendGcode(gcode);
+			var gcode = "$J=G21 G91 Z100" + " F" + Number(grblParams["$112"]).toFixed(0);
+			sendGcode(gcode);
 		}
 		g_ProbeJog = 1;
 	}
@@ -964,11 +915,10 @@ function HandleProbeCommand(command)
 		}
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
+			var feed = grblParams["$112"] * g_ProbeZDownFeed / 100;
+			var gcode;
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z > g_PendantSettings.safeLimitsZ.min)
 			{
-				var feed = Math.min(Math.max(g_Probe == undefined ? g_PendantSettings.zProbe.downSpeed : g_Probe.settings.downSpeed, 10), 100);
-				feed = grblParams["$112"] * feed / 100;
-				var gcode;
 				if (SAFE_PROBE_JOG)
 				{
 					gcode = "G38.3 G21 G90 Z" + (g_PendantSettings.safeLimitsZ.min - laststatus.machine.position.offset.z).toFixed(3) + " F" + feed.toFixed(0);
@@ -977,14 +927,10 @@ function HandleProbeCommand(command)
 				{
 					gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.min.toFixed(3) + " F" + feed.toFixed(0);
 				}
-				sendGcode(gcode);
 			}
 		}
 		else
 		{
-			var feed = Math.min(Math.max(g_Probe.settings.downSpeed, 10), 100);
-			feed = grblParams["$112"] * feed / 100;
-			var gcode;
 			if (SAFE_PROBE_JOG)
 			{
 				gcode = "G38.3 G21 G91 Z-100" + " F" + feed.toFixed(0);
@@ -993,21 +939,34 @@ function HandleProbeCommand(command)
 			{
 				gcode = "$J=G21 G91 Z-100" + " F" + feed.toFixed(0);
 			}
-			sendGcode(gcode);
 		}
+		sendGcode(gcode);
 		g_ProbeJog = -1;
+		if (SAFE_PROBE_JOG)
+		{
+			socket.off('prbResult');
+			socket.on('prbResult', function (probe)
+			{
+				// clear the probe jog if the probe is touched
+				g_ProbeJog = undefined;
+				socket.off('prbResult');
+			});
+		}
 	}
 	else if (command == "Z=")
 	{
-		if (SAFE_PROBE_JOG && g_ProbeJog == -1)
+		if (g_ProbeJog != undefined)
 		{
-			SafeStop();
+			if (SAFE_PROBE_JOG)
+			{
+				SmartStop();
+			}
+			else
+			{
+				socket.emit('stop', {stop: false, jog: true, abort: false});
+			}
+			g_ProbeJog = undefined;
 		}
-		else if (g_ProbeJog != undefined)
-		{
-			socket.emit('stop', {stop: false, jog: true, abort: false});
-		}
-		g_ProbeJog = undefined;
 	}
 	else if (command.startsWith("START"))
 	{
@@ -1023,14 +982,86 @@ function HandleProbeCommand(command)
 		}
 		else if (laststatus.comms.runStatus == "Idle")
 		{
-			g_Probe = {
-				type: probeType,
-				settings: (probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe),
-				pass: 1
-			};
-			var feed = Math.max(Math.min(g_Probe.settings.descent1.feed, grblParams["$112"]), 10);
-			var gcode = "G38.2 G21 G91 Z-" + g_Probe.settings.descent1.travel + " F" + feed.toFixed(0);
-			sendGcode(gcode);
+			// initiate seek 1
+			var settings = probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe;
+			var feed = Math.max(Math.min(settings.seek1.feed, grblParams["$112"]), 10);
+			var gcode = "G38.3 G21 G91 Z-" + settings.seek1.travel.toFixed(3) + " F" + feed.toFixed(0);
+			g_LastProbeZ = undefined;
+			socket.off('prbResult');
+
+			socket.emit('runJob', {
+				data: gcode,
+				isJob: false,
+				completedMsg: "",
+				fileName: ""
+			});
+
+			var pass = 1;
+			socket.on('prbResult', function(probe)
+			{
+				if (probe.state == 0)
+				{
+					ShowPendantDialog({
+						title: "== Probe Failed ==",
+						text: [
+							" Disconnect probe"],
+							rButton: ["OK"],
+						});
+					socket.off('prbResult');
+					return;
+				}
+
+				if (pass == 1)
+				{
+					// retract 1
+					pass = 2;
+					var gcode = "G4 P0.4"; // wait a bit
+					var feed = Math.max(Math.min(settings.retract1.feed, grblParams["$112"]), 10);
+					gcode += "\n$J=G21 G91 Z" + settings.retract1.travel.toFixed(3) + " F" + feed.toFixed(0);
+					if (settings.style == "dual")
+					{
+						// seek 2
+						feed = Math.max(Math.min(settings.seek2.feed, grblParams["$112"]), 10);
+						gcode += "\nG38.3 G21 G91 Z-" + settings.seek2.travel.toFixed(3) + " F" + feed.toFixed(0);
+						socket.emit('runJob', {
+							data: gcode,
+							isJob: false,
+							completedMsg: "",
+							fileName: ""
+						});
+					}
+					else
+					{
+						// finished (single pass)
+						g_LastProbeZ = probe.z;
+						socket.emit('runJob', {
+							data: gcode,
+							isJob: false,
+							completedMsg: "Pendant Probe" + probeType,
+							fileName: ""
+						});
+						socket.off('prbResult');
+					}
+				}
+				else if (pass == 2)
+				{
+					// retract 2
+					pass = 3;
+					var gcode = "G4 P0.4"; // wait a bit
+					var feed = Math.max(Math.min(settings.retract2.feed, grblParams["$112"]), 10);
+					gcode += "\n$J=G21 G91 Z" + settings.retract2.travel.toFixed(3) + " F" + feed.toFixed(0);
+
+					// finished (dual pass)
+					g_LastProbeZ = probe.z;
+					socket.emit('runJob', {
+						data: gcode,
+						isJob: false,
+						completedMsg: "Pendant Probe" + probeType,
+						fileName: ""
+					});
+					socket.off('prbResult');
+				}
+			});
 		}
 	}
 	else if (command == "GOTOSENSOR")
@@ -1367,7 +1398,6 @@ function TryComHandler(data)
 			g_PendantPort.on('close', DisconnectPendant);
 			socket.on('status', HandleStatus);
 			socket._callbacks["$jobComplete"].splice(0,0, HandleJobComplete);
-			socket.on('prbResult', HandleProbeResult);
 
 			g_CurrentTryPort = undefined;
 			g_CurrentTryParser = undefined;
@@ -1480,7 +1510,7 @@ window.DisconnectPendant = function()
 	$('#DisconnectPendant').addClass("disabled");
 	socket.off('status', HandleStatus);
 	socket.off('jobComplete', HandleJobComplete);
-	socket.off('prbResult', HandleProbeResult);
+	socket.off('prbResult');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1836,12 +1866,12 @@ Z Up always moves at full speed">Down Jog Speed</label>
 </div>
 
 <div id="PendantTab25" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Initial movement to locate the Z probe">Probe</label>
+  <label class="cell-sm-3 pt-1" title="Initial movement to locate the Z probe">Seek</label>
   <div class="cell-sm-4">
-    <input id="PendantZDescent1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    <input id="PendantZSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
   </div>
   <div class="cell-sm-4">
-    <input id="PendantZDescent1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    <input id="PendantZSeek1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
   </div>
 </div>
 
@@ -1862,12 +1892,12 @@ Use short distance and slower speed if there is a second pass">Retract</label>
 
 <div id="PendantTab28" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Second movement to locate the Z probe.
-Use shorter distance and slower speed than the first pass for better accuracy">Probe</label>
+Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
   <div class="cell-sm-4">
-    <input id="PendantZDescent2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    <input id="PendantZSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
   </div>
   <div class="cell-sm-4">
-    <input id="PendantZDescent2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    <input id="PendantZSeek2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
   </div>
 </div>
 
@@ -1918,12 +1948,12 @@ Z Up always moves at full speed">Down Jog Speed</label>
 </div>
 
 <div id="PendantTab35" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Initial movement to measure the tool">Probe</label>
+  <label class="cell-sm-3 pt-1" title="Initial movement to measure the tool">Seek</label>
   <div class="cell-sm-4">
-    <input id="PendantToolDescent1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    <input id="PendantToolSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
   </div>
   <div class="cell-sm-4">
-    <input id="PendantToolDescent1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    <input id="PendantToolSeek1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
   </div>
 </div>
 
@@ -1944,12 +1974,12 @@ Use short distance and slower speed if there is a second pass">Retract</label>
 
 <div id="PendantTab38" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Second movement to measure the tool.
-Use shorter distance and slower speed than the first pass for better accuracy">Probe</label>
+Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
   <div class="cell-sm-4">
-    <input id="PendantToolDescent2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    <input id="PendantToolSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
   </div>
   <div class="cell-sm-4">
-    <input id="PendantToolDescent2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    <input id="PendantToolSeek2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
   </div>
 </div>
 
@@ -2205,17 +2235,17 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.zProbe.style = $('#PendantZStyle').val();
 	g_PendantSettings.zProbe.downSpeed = Math.min(Math.max($('#PendantZDown').val(), 10), 100);
 	g_PendantSettings.zProbe.thickness = Number($('#PendantZThickness').val());
-	g_PendantSettings.zProbe.descent1 = {travel: Number($('#PendantZDescent1T').val()), feed: Number($('#PendantZDescent1F').val())};
+	g_PendantSettings.zProbe.seek1 = {travel: Number($('#PendantZSeek1T').val()), feed: Number($('#PendantZSeek1F').val())};
 	g_PendantSettings.zProbe.retract1 = {travel: Number($('#PendantZRetract1T').val()), feed: Number($('#PendantZRetract1F').val())};
-	g_PendantSettings.zProbe.descent2 = {travel: Number($('#PendantZDescent2T').val()), feed: Number($('#PendantZDescent2F').val())};
+	g_PendantSettings.zProbe.seek2 = {travel: Number($('#PendantZSeek2T').val()), feed: Number($('#PendantZSeek2F').val())};
 	g_PendantSettings.zProbe.retract2 = {travel: Number($('#PendantZRetract2T').val()), feed: Number($('#PendantZRetract2F').val())};
 
 	g_PendantSettings.toolProbe.style = $('#PendantToolStyle').val();
 	g_PendantSettings.toolProbe.downSpeed = Math.min(Math.max($('#PendantToolDown').val(), 10), 100);
 	g_PendantSettings.toolProbe.location = {X: Number($('#PendantToolX').val()), Y: Number($('#PendantToolY').val()), Z: Number($('#PendantToolZ').val())};
-	g_PendantSettings.toolProbe.descent1 = {travel: Number($('#PendantToolDescent1T').val()), feed: Number($('#PendantToolDescent1F').val())};
+	g_PendantSettings.toolProbe.seek1 = {travel: Number($('#PendantToolSeek1T').val()), feed: Number($('#PendantToolSeek1F').val())};
 	g_PendantSettings.toolProbe.retract1 = {travel: Number($('#PendantToolRetract1T').val()), feed: Number($('#PendantToolRetract1F').val())};
-	g_PendantSettings.toolProbe.descent2 = {travel: Number($('#PendantToolDescent2T').val()), feed: Number($('#PendantToolDescent2F').val())};
+	g_PendantSettings.toolProbe.seek2 = {travel: Number($('#PendantToolSeek2T').val()), feed: Number($('#PendantToolSeek2F').val())};
 	g_PendantSettings.toolProbe.retract2 = {travel: Number($('#PendantToolRetract2T').val()), feed: Number($('#PendantToolRetract2F').val())};
 
 	// macros
@@ -2314,13 +2344,13 @@ function UpdateSettingsControls(settings, romSettings)
 	}
 
 	$('#PendantZDown').val(settings.zProbe.downSpeed);
-	$('#PendantZDescent1T').val(settings.zProbe.descent1.travel);
-	$('#PendantZDescent1F').val(settings.zProbe.descent1.feed);
+	$('#PendantZSeek1T').val(settings.zProbe.seek1.travel);
+	$('#PendantZSeek1F').val(settings.zProbe.seek1.feed);
 	$('#PendantZRetract1T').val(settings.zProbe.retract1.travel);
 	$('#PendantZRetract1F').val(settings.zProbe.retract1.feed);
 
-	$('#PendantZDescent2T').val(settings.zProbe.descent2.travel);
-	$('#PendantZDescent2F').val(settings.zProbe.descent2.feed);
+	$('#PendantZSeek2T').val(settings.zProbe.seek2.travel);
+	$('#PendantZSeek2F').val(settings.zProbe.seek2.feed);
 	$('#PendantZRetract2T').val(settings.zProbe.retract2.travel);
 	$('#PendantZRetract2F').val(settings.zProbe.retract2.feed);
 
@@ -2339,13 +2369,13 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantToolY').val(settings.toolProbe.location.Y);
 	$('#PendantToolZ').val(settings.toolProbe.location.Z);
 	$('#PendantToolDown').val(settings.toolProbe.downSpeed);
-	$('#PendantToolDescent1T').val(settings.toolProbe.descent1.travel);
-	$('#PendantToolDescent1F').val(settings.toolProbe.descent1.feed);
+	$('#PendantToolSeek1T').val(settings.toolProbe.seek1.travel);
+	$('#PendantToolSeek1F').val(settings.toolProbe.seek1.feed);
 	$('#PendantToolRetract1T').val(settings.toolProbe.retract1.travel);
 	$('#PendantToolRetract1F').val(settings.toolProbe.retract1.feed);
 
-	$('#PendantToolDescent2T').val(settings.toolProbe.descent2.travel);
-	$('#PendantToolDescent2F').val(settings.toolProbe.descent2.feed);
+	$('#PendantToolSeek2T').val(settings.toolProbe.seek2.travel);
+	$('#PendantToolSeek2F').val(settings.toolProbe.seek2.feed);
 	$('#PendantToolRetract2T').val(settings.toolProbe.retract2.travel);
 	$('#PendantToolRetract2F').val(settings.toolProbe.retract2.feed);
 
