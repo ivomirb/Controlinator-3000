@@ -330,14 +330,15 @@ public:
 	enum
 	{
 		BUTTON_CONNECT = 0,
-		BUTTON_UP = 1,
-		BUTTON_DOWN = 2,
+		BUTTON_UP = 2,
+		BUTTON_DOWN = 3,
 		BUTTON_PROBE = 6,
 		BUTTON_STOP = 5,
 		BUTTON_BACK = 7,
 	};
 
 	uint8_t m_bConfirmed : 1;
+	uint8_t m_bJoggingLocked : 1;
 	uint8_t m_bJoggingUp : 1;
 	uint8_t m_bJoggingDown : 1;
 	uint8_t m_ProbeMode : 2;

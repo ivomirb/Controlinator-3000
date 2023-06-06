@@ -15,7 +15,7 @@ char g_TextBuf[20];
 #include "Input.h"
 #include "MachineStatus.h"
 
-const unsigned long PING_TIME = 5000; // 5 seconds of no PONG will disconnect
+const unsigned long PING_TIME = 10000; // 10 seconds of no PONG will disconnect (could be shorter, but I noticed that when VSCode starts up, the COM traffic stalls for a few seconds)
 const unsigned long SHOW_STOP_TIME = 500; // after 500ms after the last idle, allow showing s STOP button
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -35,6 +35,7 @@ float g_OffsetX, g_OffsetY, g_OffsetZ; // machine = work + offset
 bool g_bWorkSpace = true;
 bool g_bShowInches = true;
 bool g_bJobRunning = false;
+bool g_bRecentlyHomed = false;
 
 enum
 {
@@ -163,6 +164,8 @@ void ParseStatus2( const char *status )
 {
 	g_bJobRunning = status[0] == 'J';
 	if (g_bJobRunning) status++;
+	g_bRecentlyHomed = status[0] == 'H';
+	if (g_bRecentlyHomed) status++;
 	g_TloState = status[0] - '0';
 	status++;
 	g_OffsetX = atof(status); status = strchr(status, ',') + 1;

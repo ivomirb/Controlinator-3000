@@ -25,11 +25,29 @@ void ProbeMenuScreen::Update( unsigned long time )
 	}
 	else if (button == BUTTON_PROBE_REF_TOOL)
 	{
-		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_REF_TOOL, true);
+		if (g_bRecentlyHomed)
+		{
+			g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_REF_TOOL, true);
+		}
+		else
+		{
+			Serial.print(g_StrPROBE);
+			Serial.print(g_StrENTER);
+			Serial.println(ZProbeScreen::PROBE_REF_TOOL);
+		}
 	}
 	else if ((g_TloState & TLO_HAS_REF) && button == BUTTON_PROBE_NEW_TOOL)
 	{
-		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_NEW_TOOL, true);
+		if (g_bRecentlyHomed)
+		{
+			g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_NEW_TOOL, true);
+		}
+		else
+		{
+			Serial.print(g_StrPROBE);
+			Serial.print(g_StrENTER);
+			Serial.println(ZProbeScreen::PROBE_NEW_TOOL);
+		}
 	}
 	else if (button == BUTTON_BACK)
 	{

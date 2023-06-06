@@ -1,9 +1,5 @@
 // For reference: https://github.com/gnea/grbl/blob/master/doc/markdown/commands.md
 
-// These must match Main.h
-const PENDANT_VERSION = "1.0";
-const PENDANT_BAUD_RATE = 38400;
-
 const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - everything+ACK
 
 // Normally the Arduino Nano is programmed via the USB cable. This requires the Arduino to reset when a serial connection is initiated.
@@ -14,9 +10,14 @@ const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - everythi
 const ARDUINO_RESETS_ON_CONNECT = true;
 
 // This flag causes the Z Down button in the probing screen to use the G38.3 command instead of $J, which will stop if the probe is touched.
-// It is not entirely safe because slamming into a hard probe at jogging speeds is never safe, but might reduce the damage.
+// It is not entirely safe because plunging into a hard probe at jogging speeds is never safe, but might reduce the damage to the probe or the endmill.
 // It will work better if the probe uses a button with some overtravel capability, like many button-based tool sensors.
+// The downside is the loss of some responsiveness for the Up and Down buttons.
 const SAFE_PROBE_JOG = true;
+
+// These must match Main.h
+const PENDANT_VERSION = "1.0";
+const PENDANT_BAUD_RATE = 38400;
 
 const {
 	SerialPort
@@ -46,7 +47,9 @@ var g_ProbeZDownFeed = 50; // feed rate for the Z Down button (in % of $112)
 var g_ProbeJog; // -1 - up, 1 - down
 var g_LastProbeZ;
 
-var g_bSafeStopPending = false;
+var g_SafeStopPending = 0; // 0 - ignore, 1 - clear on idle, 2 - don't clear on idle
+var g_LastBusyTime = undefined;
+var g_LastUpdateTime = undefined;
 
 // This table match the names and order in MachineStatus.h
 const g_StatusMap =
@@ -160,7 +163,7 @@ function GenerateStatusString(s)
 	else
 	{
 		status = g_StatusMap[s.comms.runStatus];
-		if (status == g_StatusMap.Running && (g_JogLocationXY != undefined || g_JogLocationW != undefined || g_ProbeJog))
+		if (status == g_StatusMap.Running && (g_JogLocationXY != undefined || g_JogLocationW != undefined || g_ProbeJog != undefined))
 		{
 			status = g_StatusMap.Jog;
 		}
@@ -191,9 +194,9 @@ function GenerateStatus2String(s)
 		}
 	}
 
-	// secondary status string - STATUS2:offsetX,offsetY,offsetZ
+	// secondary status string - STATUS2:[J][H]<tlo>offsetX,offsetY,offsetZ
 	var str = "STATUS2:"
-		+ (lastJobStartTime ? "J" : "") + tlo
+		+ (lastJobStartTime ? "J" : "") + (s.machine.modals.homedRecently ? "H" : "") + tlo
 		+ s.machine.position.offset.x.toFixed(3) + ","
 		+ s.machine.position.offset.y.toFixed(3) + ","
 		+ s.machine.position.offset.z.toFixed(3);
@@ -224,20 +227,36 @@ function PushStatus(status)
 // Processes the status from  the machine
 function HandleStatus(status)
 {
+	g_LastUpdateTime = Date.now();
 	if (status.comms.runStatus == "Idle")
 	{
 		// update wheel jog location on every idle
 		g_JogLocationW = undefined;
-		g_bSafeStopPending = false;
+		if (g_SafeStopPending == 1) { g_SafeStopPending = 0; }
 	}
-	else if (g_bSafeStopPending && status.comms.runStatus == "Hold:0")
+	else
 	{
-		socket.emit('stop', {stop: true, jog: false, abort: false});
-		g_bSafeStopPending = false;
+		g_LastBusyTime = Date.now();
+		if (g_SafeStopPending!= 0 && status.comms.runStatus == "Hold:0")
+		{
+			socket.emit('stop', {stop: true, jog: false, abort: false});
+			g_SafeStopPending = 0;
+		}
 	}
 
 	// send to pendant
 	PushStatus(status);
+}
+
+// Returns true if the machine was idle for at least 500ms, and the last status upadte was less than 300ms ago
+function IsStableIdle()
+{
+	if (g_LastBusyTime != undefined && g_LastUpdateTime != undefined)
+	{
+		var t = Date.now();
+		return t - g_LastBusyTime >= 500 && t - g_LastUpdateTime <= 300;
+	}
+	return false;
 }
 
 // Handles the job completion event
@@ -402,8 +421,11 @@ function PushSettings(pushRomSettings)
 // Issues feed hold, and then soft reset once Hold:0 is reached
 function SafeStop()
 {
-	socket.emit('serialInject', '!'); // feed hold
-	g_bSafeStopPending = true;
+	if (!IsStableIdle())
+	{
+		socket.emit('serialInject', '!'); // feed hold
+		g_SafeStopPending = laststatus.comms.runStatus == "Idle" ? 2 : 1;
+	}
 }
 
 // Stops the current operation as gently as possible
@@ -413,7 +435,7 @@ function SmartStop()
 	{
 		socket.emit('stop', {stop: false, jog: true, abort: false});
 	}
-	else if (laststatus.comms.runStatus == "Run")
+	else if (laststatus.comms.runStatus == "Run" || g_ProbeJog != undefined)
 	{
 		// pause, wait for hold0, then stop
 		SafeStop();
@@ -859,7 +881,7 @@ function HandleProbeCommand(command)
 						" Machine has to",
 						" be homed before",
 						"using tool probe."],
-						lButton: ["IGNORE", function() { WritePort("PROBESCREEN:" + probeType); SetupProbeMode(probeType); }],
+						lButton: ["!IGNORE", function() { WritePort("PROBESCREEN:" + probeType); SetupProbeMode(probeType); }],
 						rButton: ["OK"],
 					});
 				return;

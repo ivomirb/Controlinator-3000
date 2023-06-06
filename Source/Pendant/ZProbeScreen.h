@@ -1,24 +1,22 @@
 #pragma once
 
-DEFINE_STRING(g_StrPROBE, "PROBE:");
-
 void ZProbeScreen::Draw( void )
 {
 	DrawMachineStatus();
-	uint8_t unusedButtons = 0x78;
+	uint8_t unusedButtons = 0x72;
 	if (m_bJoggingUp)
 	{
-		u8g2.drawBox(0, g_Rows[2] - 1, 4*7 + 2, 10);
+		u8g2.drawBox(0, g_Rows[3] - 1, 4*7 + 2, 10);
 		u8g2.setColorIndex(0);
 	}
-	DrawText(0, 2, ROMSTR("Z Up"));
+	DrawText(0, 3, ROMSTR("Z Up"));
 	u8g2.setColorIndex(1);
 	if (m_bJoggingDown)
 	{
-		u8g2.drawBox(0, g_Rows[3] - 1, 6*7 + 2, 10);
+		u8g2.drawBox(0, g_Rows[4] - 1, 6*7 + 2, 10);
 		u8g2.setColorIndex(0);
 	}
-	DrawText(0, 3, ROMSTR("Z Down"));
+	DrawText(0, 4, ROMSTR("Z Down"));
 	u8g2.setColorIndex(1);
 
 	if (g_MachineStatus == STATUS_IDLE && m_bConfirmed)
@@ -49,7 +47,13 @@ void ZProbeScreen::Draw( void )
 void ZProbeScreen::Update( unsigned long time )
 {
 	int8_t button = GetCurrentButton();
-	if (g_MachineStatus == STATUS_IDLE && (time - g_LastBusyTime > 500) && !m_bJoggingUp && !m_bJoggingDown)
+	if (m_bJoggingLocked && !TestBit(g_ButtonState, BUTTON_UP) && !TestBit(g_ButtonState, BUTTON_DOWN))
+	{
+		// lock joging until both up and down buttons are released to avoid accidental move as the screen is activated
+		m_bJoggingLocked = false;
+	}
+
+	if (!m_bJoggingLocked && g_MachineStatus == STATUS_IDLE && (time - g_LastBusyTime > 500) && !m_bJoggingUp && !m_bJoggingDown)
 	{
 		if (TestBit(g_ButtonState, BUTTON_UP))
 		{
@@ -129,6 +133,7 @@ void ZProbeScreen::Activate( unsigned long time, ProbeMode mode, bool bNotify )
 	m_bConfirmed = false;
 	m_bJoggingUp = false;
 	m_bJoggingDown = false;
+	m_bJoggingLocked = true;
 }
 
 void ZProbeScreen::Deactivate( void )
