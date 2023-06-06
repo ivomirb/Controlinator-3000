@@ -15,6 +15,9 @@ const ARDUINO_RESETS_ON_CONNECT = true;
 // The downside is the loss of some responsiveness for the Up and Down buttons.
 const SAFE_PROBE_JOG = true;
 
+// The step size for changing the feed or speed override. Smaller number allows for more precise control
+const WHEEL_OVERRIDE_STEP = 5; // 5% per click
+
 // These must match Main.h
 const PENDANT_VERSION = "1.0";
 const PENDANT_BAUD_RATE = 38400;
@@ -35,6 +38,7 @@ const CHAR_HOLD = String.fromCharCode(0x03);
 const CHAR_ACK = String.fromCharCode(0x1F);
 const MAX_MESSAGE_LENGTH = 50; // send up to 50 bytes to the pendant and then wait for ACK. Arduino has only 64 bytes of buffer for the serial connection
 
+var g_StatusCounter = 0;
 // Status cache - store the last sent value to avoid spamming when nothing changes
 var g_LastStatusStr = undefined;
 var g_LastStatus2Str = undefined;
@@ -173,8 +177,8 @@ function GenerateStatusString(s)
 		+ s.machine.position.work.x.toFixed(3) + ","
 		+ s.machine.position.work.y.toFixed(3) + ","
 		+ s.machine.position.work.z.toFixed(3) + "|"
-		+ s.machine.overrides.feedOverride.toFixed(0) + ","
-		+ s.machine.overrides.spindleOverride.toFixed(0) + ","
+		+ (g_TargetFeedRate != undefined ? g_TargetFeedRate : s.machine.overrides.feedOverride.toFixed(0)) + ","
+		+ (g_TargetSpeedRate != undefined ? g_TargetSpeedRate : s.machine.overrides.spindleOverride.toFixed(0)) + ","
 		+ s.machine.overrides.realFeed.toFixed(0) + ","
 		+ s.machine.overrides.realSpindle.toFixed(0);
 	return str;
@@ -227,6 +231,7 @@ function PushStatus(status)
 // Processes the status from  the machine
 function HandleStatus(status)
 {
+	g_StatusCounter++;
 	g_LastUpdateTime = Date.now();
 	if (status.comms.runStatus == "Idle")
 	{
@@ -1097,6 +1102,90 @@ function HandleProbeCommand(command)
 	}
 }
 
+var g_TargetFeedRate;
+var g_TargetSpeedRate;
+var g_FeedSpeedRateTimer;
+var g_FeedSpeedStatusCounter;
+
+// A callback to periodically update the feed and speed rate
+function FeedSpeedRateUpdate()
+{
+	if (g_FeedSpeedStatusCounter == g_StatusCounter)
+	{
+		return; // no update yet
+	}
+	g_FeedSpeedStatusCounter = g_StatusCounter;
+	if (g_TargetFeedRate == 100)
+	{
+		socket.emit('serialInject', String.fromCharCode(0x90)); // set to 100
+		socket.emit('serialInject', "?");
+		g_TargetFeedRate = undefined;
+	}
+	else if (g_TargetFeedRate != undefined)
+	{
+		var delta = g_TargetFeedRate - laststatus.machine.overrides.feedOverride;
+		if (delta != 0)
+		{
+			if (delta >= 10)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x91)); // increase by 10
+			}
+			else if (delta > 0)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x93)); // increase by 1
+			}
+			else if (delta <= -10)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x92)); // decrease by 10
+			}
+			else if (delta < 0)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x94)); // decrease by 1
+			}
+			socket.emit('serialInject', "?");
+			return;
+		}
+		g_TargetFeedRate = undefined;
+	}
+
+	if (g_TargetSpeedRate  == 100)
+	{
+		socket.emit('serialInject', String.fromCharCode(0x99)); // set to 100
+		socket.emit('serialInject', "?");
+		g_TargetSpeedRate  = undefined;
+	}
+	else if (g_TargetSpeedRate != undefined)
+	{
+		var delta = g_TargetSpeedRate - laststatus.machine.overrides.spindleOverride;
+		if (delta != 0)
+		{
+			if (delta >= 10)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x9A)); // increase by 10
+			}
+			else if (delta > 0)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x9C)); // increase by 1
+			}
+			else if (delta <= -10)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x9B)); // decrease by 10
+			}
+			else if (delta < 0)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x9D)); // decrease by 1
+			}
+			socket.emit('serialInject', "?");
+			return;
+		}
+		g_TargetSpeedRate = undefined;
+	}
+
+	clearInterval(g_FeedSpeedRateTimer);
+	g_FeedSpeedRateTimer = undefined;
+	g_FeedSpeedStatusCounter = undefined;
+}
+
 // Handles the communication from the pendant
 function PendantComHandler(data)
 {
@@ -1271,15 +1360,29 @@ function PendantComHandler(data)
 	if (data.startsWith("FEED:"))
 	{
 		if (COM_LOG_LEVEL >= 1) { console.log("#FEED#"); }
-		var val = Number(data.substring(5)) * 10;
+		var val = Number(data.substring(5)) * WHEEL_OVERRIDE_STEP;
 		if (val == 0)
 		{
-			feedOverride(100);
+			g_TargetFeedRate = 100;
 		}
 		else
 		{
-			val = Math.min(Math.max(val + laststatus.machine.overrides.feedOverride, 10), 200);
-			feedOverride(val);
+			var current = g_TargetFeedRate != undefined ? g_TargetFeedRate : laststatus.machine.overrides.feedOverride;
+			if (val > 0)
+			{
+				val = Math.ceil((val + current) / WHEEL_OVERRIDE_STEP) * WHEEL_OVERRIDE_STEP;
+			}
+			else
+			{
+				val = Math.floor((val + current) / WHEEL_OVERRIDE_STEP) * WHEEL_OVERRIDE_STEP;
+			}
+			val = Math.min(Math.max(val, 10), 200);
+			g_TargetFeedRate = val;
+		}
+		if (g_FeedSpeedRateTimer == undefined)
+		{
+			FeedSpeedRateUpdate();
+			g_FeedSpeedRateTimer = setInterval(FeedSpeedRateUpdate, 50);
 		}
 		return;
 	}
@@ -1287,15 +1390,29 @@ function PendantComHandler(data)
 	if (data.startsWith("SPEED:"))
 	{
 		if (COM_LOG_LEVEL >= 1) { console.log("#SPEED#"); }
-		var val = Number(data.substring(6)) * 10;
+		var val = Number(data.substring(6)) * WHEEL_OVERRIDE_STEP;
 		if (val == 0)
 		{
-			spindleOverride(100);
+			g_TargetSpeedRate = 100;
 		}
 		else
 		{
-			val = Math.min(Math.max(val + laststatus.machine.overrides.spindleOverride, 10), 200);
-			spindleOverride(val);
+			var current = g_TargetSpeedRate != undefined ? g_TargetSpeedRate : laststatus.machine.overrides.spindleOverride;
+			if (val > 0)
+			{
+				val = Math.ceil((val + current) / WHEEL_OVERRIDE_STEP) * WHEEL_OVERRIDE_STEP;
+			}
+			else
+			{
+				val = Math.floor((val + current) / WHEEL_OVERRIDE_STEP) * WHEEL_OVERRIDE_STEP;
+			}
+			val = Math.min(Math.max(val, 10), 200);
+			g_TargetSpeedRate = val;
+		}
+		if (g_FeedSpeedRateTimer == undefined)
+		{
+			FeedSpeedRateUpdate();
+			g_FeedSpeedRateTimer = setInterval(FeedSpeedRateUpdate, 50);
 		}
 		return;
 	}
@@ -1425,6 +1542,7 @@ function TryComHandler(data)
 			g_CurrentTryParser = undefined;
 			g_CurrentTryTimer = undefined;
 			g_ComPorts = undefined;
+			g_StatusCounter = 0;
 
 			localStorage.setItem("PendantPort", g_PendantPort.path);
 			HandleHandshake();
