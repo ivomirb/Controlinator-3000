@@ -51,44 +51,37 @@ void RunScreen::Draw( void )
 	switch (state)
 	{
 		case STATE_IDLE: // job hasn't started, ready to run
-			{
-				DrawButton(BUTTON_RUN, ROMSTR("Run"), 3, true);
-				DrawButton(BUTTON_BACK, g_StrBack, 4, false);
-				unusedButtons &= ~((1<<BUTTON_RUN)|(1<<BUTTON_BACK));
-			}
+			DrawButton(BUTTON_RUN, ROMSTR("Run"), 3, true);
+			DrawButton(BUTTON_BACK, g_StrBack, 4, false);
+			unusedButtons &= ~((1<<BUTTON_RUN)|(1<<BUTTON_BACK));
 			break;
+
 		case STATE_RUNNING: // job is currently running
-			{
-				DrawButton(BUTTON_PAUSE, ROMSTR("Pause"), 5, false);
-				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
-				unusedButtons &= ~((1<<BUTTON_PAUSE)|(1<<BUTTON_STOP));
-			}
+			DrawButton(BUTTON_PAUSE, ROMSTR("Pause"), 5, false);
+			DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
+			unusedButtons &= ~((1<<BUTTON_PAUSE)|(1<<BUTTON_STOP));
 			break;
+
 		case STATE_PAUSED: // job is paused, but not clear to resume
+			if (g_RealRpm > 0)
 			{
-				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
-				unusedButtons &= ~(1<<BUTTON_STOP);
-				if (g_RealRpm > 0)
-				{
-					DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
-					unusedButtons &= ~(1<<BUTTON_RPM0);
-				}
+				DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
+				unusedButtons &= ~(1<<BUTTON_RPM0);
 			}
+			// fallthrough
+		case STATE_PAUSING: // stopping (still show STOP to avoid flicker)
+			DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
+			unusedButtons &= ~(1<<BUTTON_STOP);
 			break;
+
 		case STATE_PAUSED_READY: // job is ready to resome
+			DrawButton(BUTTON_RESUME, ROMSTR("Resume"), 6, true);
+			DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
+			unusedButtons &= ~((1<<BUTTON_RESUME)|(1<<BUTTON_STOP));
+			if (g_RealRpm > 0)
 			{
-				DrawButton(BUTTON_RESUME, ROMSTR("Resume"), 6, true);
-				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
-				unusedButtons &= ~((1<<BUTTON_RESUME)|(1<<BUTTON_STOP));
-				if (g_RealRpm > 0)
-				{
-					DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
-					unusedButtons &= ~(1<<BUTTON_RPM0);
-				}
-			}
-			break;
-		case STATE_OTHER:
-			{
+				DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
+				unusedButtons &= ~(1<<BUTTON_RPM0);
 			}
 			break;
 	}

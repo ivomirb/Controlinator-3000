@@ -1,7 +1,5 @@
 // For reference: https://github.com/gnea/grbl/blob/master/doc/markdown/commands.md
 
-const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - everything+ACK
-
 // Normally the Arduino Nano is programmed via the USB cable. This requires the Arduino to reset when a serial connection is initiated.
 // If this is the case, set the value to true. The PC will wait 2 seconds after opening the connection before trying to communicate.
 // You can connect a capacitor between RST and GND, which will disable the reset and improve the speed of the initial connection.
@@ -18,9 +16,19 @@ const SAFE_PROBE_JOG = true;
 // The step size for changing the feed or speed override. Smaller number allows for more precise control
 const WHEEL_OVERRIDE_STEP = 5; // 5% per click
 
+// This value controls how much travel time to submit to Grbl ahead of time. Longer value makes the jog smoother, but less responsive.
+const WHEEL_JOG_AHEAD_TIME = 600; // up to 600ms of jog time submitted to Grbl
+
+// This value controls how long after you stop turning the wheel the jog will stop. Smaller number will make the stop
+// more responsive and prevent long runaway jog movements. It comes at the expense of lost clicks of the wheel.
+// To avoid losing any clicks (the machine will move the exact number of clicks), use a very large number like 100000
+const WHEEL_JOG_STOP_TIME = 100; // the jog will stop 100ms after the last click
+
 // These must match Main.h
 const PENDANT_VERSION = "1.0";
 const PENDANT_BAUD_RATE = 38400;
+
+const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - everything+ACK
 
 const {
 	SerialPort
@@ -88,8 +96,8 @@ function GetDefaultSettings()
 		// main settings
 		autoConnect: true,
 		displayUnits: "mm",
-		wheelRatesMm: [1, 0.01, 0.1, 0.5],
-		wheelRatesIn: [0.1, 0.001, 0.01],
+		wheelStepsMm: [1, 0.1, 0.01],
+		wheelStepsIn: [0.1, 0.01, 0.001],
 		pauseSpindle: false,
 		jobChecklist: "Remove Probe|Turn On Spindle",
 		safeLimitsEnabled: true,
@@ -101,20 +109,21 @@ function GetDefaultSettings()
 		zProbe: {
 			style: "single",
 			downSpeed: 50,
-			seek1: {travel: 15, feed:  100},
+			seek1: {travel:    15, feed:  100},
 			retract1: {travel:  5, feed: 1000},
-			seek2: {travel:  1, feed:   50},
+			seek2: {travel:     1, feed:   50},
 			retract2: {travel:  5, feed: 1000},
 			thickness: undefined,
+			useProbeResult: false,
 		},
 
 		// tool probe
 		toolProbe: {
 			style: "disable",
 			downSpeed: 50,
-			seek1: {travel: 15, feed:  100},
+			seek1: {travel:    15, feed:  100},
 			retract1: {travel:  5, feed: 1000},
-			seek2: {travel:  1, feed:   50},
+			seek2: {travel:     1, feed:   50},
 			retract2: {travel:  5, feed: 1000},
 			location: {X: 0, Y: 0, Z: 0},
 		},
@@ -167,7 +176,7 @@ function GenerateStatusString(s)
 	else
 	{
 		status = g_StatusMap[s.comms.runStatus];
-		if (status == g_StatusMap.Running && (g_JogLocationXY != undefined || g_JogLocationW != undefined || g_ProbeJog != undefined))
+		if (status == g_StatusMap.Running && (g_JogXYLocation != undefined || g_JogQueue != undefined || g_ProbeJog != undefined))
 		{
 			status = g_StatusMap.Jog;
 		}
@@ -236,7 +245,6 @@ function HandleStatus(status)
 	if (status.comms.runStatus == "Idle")
 	{
 		// update wheel jog location on every idle
-		g_JogLocationW = undefined;
 		if (g_SafeStopPending == 1) { g_SafeStopPending = 0; }
 	}
 	else
@@ -374,20 +382,20 @@ function PushSettings(pushRomSettings)
 	if (g_PendantSettings.displayUnits == "inches")
 	{
 		var str = "UNITS:I";
-		var rates = g_PendantSettings.wheelRatesIn;
-		for (var idx = 0; idx < rates.length; idx++)
+		var steps = g_PendantSettings.wheelStepsIn;
+		for (var idx = 0; idx < steps.length; idx++)
 		{
-			str += "|" + (rates[idx]*1000).toFixed(0);
+			str += "|" + (steps[idx]*1000).toFixed(0);
 		}
 		WritePort(str);
 	}
 	else
 	{
 		var str = "UNITS:M";
-		var rates = g_PendantSettings.wheelRatesMm;
-		for (var idx = 0; idx < rates.length; idx++)
+		var steps = g_PendantSettings.wheelStepsMm;
+		for (var idx = 0; idx < steps.length; idx++)
 		{
-			str += "|" + (rates[idx]*100).toFixed(0);
+			str += "|" + (steps[idx]*100).toFixed(0);
 		}
 		WritePort(str);
 	}
@@ -452,8 +460,28 @@ function SmartStop()
 	}
 }
 
-// Clamps the delta to keep the value within the safe range for the axis
-function ClampSafeAbsoluteMove(value, delta, axis, inches)
+// Returns true if value + delta is within the safe area
+function IsSafeAbsoluteMove(value, delta, axis, bInches)
+{
+	if (!g_PendantSettings.safeLimitsEnabled)
+	{
+		return true;
+	}
+
+	var limits = g_PendantSettings["safeLimits" + axis];
+	var min = limits.min;
+	var max = limits.max;
+	if (min >= max) return false; // bad range
+	if (bInches)
+	{
+		min /= 25.4;
+		max /= 25.4;
+	}
+	return delta > 0 ? (value + delta <= max) : (value + delta >= min);
+}
+
+// Clamps value + delta to keep it within the safe range for the axis
+function ClampSafeAbsoluteMove(value, delta, axis, bInches)
 {
 	if (!g_PendantSettings.safeLimitsEnabled)
 	{
@@ -464,7 +492,7 @@ function ClampSafeAbsoluteMove(value, delta, axis, inches)
 	var min = limits.min;
 	var max = limits.max;
 	if (min >= max) return value; // bad range
-	if (inches)
+	if (bInches)
 	{
 		min /= 25.4;
 		max /= 25.4;
@@ -481,22 +509,105 @@ function ClampSafeAbsoluteMove(value, delta, axis, inches)
 	return value;
 }
 
-// Last known joystick jog location in MCS. always in mm
-var g_JogLocationXY;
+// Jogging with the wheel
+var g_JogAxis; // 'X', 'Y' or 'Z'
+var g_JogStep;
+var g_bJogInches;
+var g_JogLocation; // the last submitted target for g_JogAxis
+var g_JogQueue; // number of queued steps along g_JogAxis
 var g_JogTimer;
-var g_JogJoystick = {X: 0, Y: 0}; // Last received joystick position
+var g_LastWheelMoveTime;
 
-// Last known wheel location in MCS. updated by the wheel. reset on idle. always in mm
-var g_JogLocationW;
+// Jogging with joystick
+var g_JogXYLocation; // last known joystick jog location in MCS. always in mm
+var g_JogXYTimer;
+var g_JogJoystick = {X: 0, Y: 0}; // last received joystick position
+
+// Called periodically to process the queue of wheel jog requests
+function ProcessJogQueue()
+{
+	if (g_JogQueue == 0 && IsStableIdle())
+	{
+		clearInterval(g_JogTimer);
+		g_JogTimer = undefined;
+		g_JogAxis = undefined;
+		g_bJogInches = undefined;
+		g_JogLocation = undefined;
+		g_JogQueue = undefined;
+		return;
+	}
+
+	if (Date.now() - g_LastWheelMoveTime > WHEEL_JOG_STOP_TIME)
+	{
+		// wheel stopped, clear the queue
+		g_JogQueue = 0;
+		return;
+	}
+
+	var feedT;
+	switch (g_JogAxis)
+	{
+		case "X": feedT = grblParams["$110"]; break;
+		case "Y": feedT = grblParams["$111"]; break;
+		case "Z": feedT = grblParams["$112"]; break;
+	}
+
+	var maxDist = feedT * WHEEL_JOG_AHEAD_TIME / 60000; // travel distance to keep in the queue
+
+	var axisL = g_JogAxis.toLowerCase();
+	var current = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL]; // current absolute position
+	var dist = Math.abs(g_JogLocation - current);
+
+	// determine how much of the queue can be processed in WHEEL_JOG_AHEAD_TIME
+	var count = 0;
+	var step = Math.abs(g_JogStep) * (g_bJogInches ? 25.4 : 1); // jog step in mm
+	for (; count < g_JogQueue; count++)
+	{
+		if (dist > 0.01 && dist + step > maxDist)
+		{
+			break; // have enough for WHEEL_JOG_AHEAD_TIME
+		}
+		dist += step;
+	}
+
+	if (count > 0)
+	{
+		// determine the target location
+		var absValue = g_JogLocation;
+		if (g_bJogInches) { absValue /= 25.4; }
+
+		var delta = 0;
+		for (var i = 0; i < count; i++)
+		{
+			if (IsSafeAbsoluteMove(absValue, delta + g_JogStep, g_JogAxis, g_bJogInches))
+			{
+				delta += g_JogStep;
+			}
+			else
+			{
+				break;
+			}
+		}
+		g_JogQueue -= count;
+
+		if (delta != 0)
+		{
+			absValue += delta;
+			// absolute move in machine space, inches or mm
+			var gcode = "$J=G90 G53 " + (g_bJogInches ? "G20 " : "G21 ") + g_JogAxis + absValue.toFixed(3) + " F" + feedT;
+			sendGcode(gcode);
+			g_JogLocation = g_bJogInches ? absValue * 25.4 : absValue;
+		}
+	}
+}
 
 // Begins jogging with the joystick
 function BeginJogXY()
 {
-	g_JogLocationXY =
+	g_JogXYLocation =
 	{
 		X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
 		Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
-		Z: laststatus.machine.position.work.z + laststatus.machine.position.offset.z,
 	};
 	// fill the queue with tiny jogs
 	for (var i = 0; i < 20; i++)
@@ -509,24 +620,32 @@ function BeginJogXY()
 // Cancels jogging in the joystick
 function CancelJogXY()
 {
-	g_JogLocationXY = undefined;
-	if (g_JogTimer != undefined)
+	g_JogXYLocation = undefined;
+	if (g_JogXYTimer != undefined)
 	{
-		clearInterval(g_JogTimer);
-		g_JogTimer = undefined;
+		clearInterval(g_JogXYTimer);
+		g_JogXYTimer = undefined;
 	}
 }
 
 // Queues a jog increment. dt - time duration in seconds
 function QueueJogXY(joyX, joyY, dt)
 {
+	if (joyX == 0 && joyY == 0)
+	{
+		return;
+	}
 	var feedXY = grblParams["$110"] / 60; // mm/sec
 
+	// normalize joyX and joyY from 20x20 square to the unit circle
+	var slope = Math.abs(joyX) < Math.abs(joyY) ? joyX/joyY : joyY/joyX;
+	var maxXY = Math.sqrt(slope*slope + 1) * 10;
+
 	// requested move in mm
-	var newX = ClampSafeAbsoluteMove(g_JogLocationXY.X, joyX * feedXY * dt / 10, 'X', false);
-	var newY = ClampSafeAbsoluteMove(g_JogLocationXY.Y, joyY * feedXY * dt / 10, 'Y', false);
-	var dx = newX - g_JogLocationXY.X;
-	var dy = newY - g_JogLocationXY.Y;
+	var newX = ClampSafeAbsoluteMove(g_JogXYLocation.X, joyX * feedXY * dt / maxXY, 'X', false);
+	var newY = ClampSafeAbsoluteMove(g_JogXYLocation.Y, joyY * feedXY * dt / maxXY, 'Y', false);
+	var dx = newX - g_JogXYLocation.X;
+	var dy = newY - g_JogXYLocation.Y;
 
 	if (dx != 0 || dy != 0)
 	{
@@ -536,8 +655,8 @@ function QueueJogXY(joyX, joyY, dt)
 		var gcode = "$J=G53 G90 G21" + " X" + newX.toFixed(3) + " Y" + newY.toFixed(3) + " F" + feed.toFixed(0);
 		sendGcode(gcode);
 	}
-	g_JogLocationXY.X = newX;
-	g_JogLocationXY.Y = newY;
+	g_JogXYLocation.X = newX;
+	g_JogXYLocation.Y = newY;
 
 }
 
@@ -575,29 +694,29 @@ function HandleJogCommand(command)
 			newValue = ClampSafeAbsoluteMove(globalValue, -globalValue, axis, false);
 		}
 
-		var feed;
+		var feedT;
 		switch (axis)
 		{
-			case "X": feed = grblParams["$110"]; break;
-			case "Y": feed = grblParams["$111"]; break;
-			case "Z": feed = grblParams["$112"]; break;
+			case "X": feedT = grblParams["$110"]; break;
+			case "Y": feedT = grblParams["$111"]; break;
+			case "Z": feedT = grblParams["$112"]; break;
 		}
 
 		// absolute move, work or machine, mm
 		// use max speed allowed by the axis
-		var gcode = "$J=G90 G21 " + (work ? "" : "G53 ") + axis + newValue.toFixed(3) + " F" + feed;
+		var gcode = "$J=G90 G21 " + (work ? "" : "G53 ") + axis + newValue.toFixed(3) + " F" + feedT;
 		sendGcode(gcode);
 		return;
 	}
 
-	if (command[0] == 'R')
+	if (command[0] == 'A')
 	{
-		// round to nearest
+		// align to nearest
 		if (laststatus.comms.runStatus != "Idle") { return; }
 
 		var units = command[1]; // M or I
 		if (units != 'I' && units != 'M') { return; }
-		var inches = units == 'I';
+		var bInches = units == 'I';
 
 		var space = command[2]; // L or G
 		if (space != 'L' && space != 'G') { return; }
@@ -607,43 +726,39 @@ function HandleJogCommand(command)
 		if (axis < 'X' || axis > 'Z') { return; }
 		var axisL = axis.toLowerCase();
 
-		var rate = Number(command.substring(4));
+		var step = Number(command.substring(4));
 
 		var pos = laststatus.machine.position;
 		var globalValue = pos.work[axisL] + pos.offset[axisL];
-		if (inches) { globalValue /= 25.4; }
+		if (bInches) { globalValue /= 25.4; }
 
 		var oldValue = globalValue;
 		if (work)
 		{
-			oldValue -= inches ? (pos.offset[axisL] / 25.4) : pos.offset[axisL];
+			oldValue -= bInches ? (pos.offset[axisL] / 25.4) : pos.offset[axisL];
 		}
 
-		var roundedValue = Math.round(oldValue / rate) * rate;
-		var delta = roundedValue - oldValue;
-		var newGlobalValue = ClampSafeAbsoluteMove(globalValue, delta, axis, inches);
-		if (Math.abs(globalValue + delta - newGlobalValue) > 0.00001)
+		var roundedValue = Math.round(oldValue / step) * step;
+		if (!IsSafeAbsoluteMove(globalValue, roundedValue - oldValue, axis, bInches))
 		{
 			// rounded position not safe, try rounding in the other direction
-			roundedValue = (delta < 0 ? Math.ceil(oldValue / rate) : Math.floor (oldValue / rate)) * rate;
-			delta = roundedValue - oldValue;
-			newGlobalValue = ClampSafeAbsoluteMove(globalValue, delta, axis, inches);
-			if (Math.abs(globalValue + delta - newGlobalValue) > 0.00001)
+			roundedValue = (roundedValue  < oldValue ? Math.ceil(oldValue / step) : Math.floor(oldValue / step)) * step;
+			if (!IsSafeAbsoluteMove(globalValue, roundedValue - oldValue, axis, bInches))
 			{
 				return;
 			}
 		}
 
-		var feed;
+		var feedT;
 		switch (axis)
 		{
-			case "X": feed = grblParams["$110"]; break;
-			case "Y": feed = grblParams["$111"]; break;
-			case "Z": feed = grblParams["$112"]; break;
+			case "X": feedT = grblParams["$110"]; break;
+			case "Y": feedT = grblParams["$111"]; break;
+			case "Z": feedT = grblParams["$112"]; break;
 		}
 
 		// absolute move, work or machine, inches or mm
-		var gcode = "$J=G90 " + (work ? "" : "G53 ") + (inches ? "G20 " : "G21 ") + axis + roundedValue.toFixed(3) + " F" + feed;
+		var gcode = "$J=G90 " + (work ? "" : "G53 ") + (bInches ? "G20 " : "G21 ") + axis + roundedValue.toFixed(3) + " F" + feedT;
 		sendGcode(gcode);
 		return;
 	}
@@ -651,45 +766,49 @@ function HandleJogCommand(command)
 	if (command[0] == 'W')
 	{
 		// hand wheel
-		if (g_JogLocationW == undefined)
-		{
-			g_JogLocationW =
-			{
-				X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
-				Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
-				Z: laststatus.machine.position.work.z + laststatus.machine.position.offset.z,
-			};
-		}
 		var units = command[1]; // M or I
 		if (units != 'I' && units != 'M') { return; }
 		var inches = units == 'I';
 
 		var axis = command[2]; // X/Y/Z
 		if (axis < 'X' || axis > 'Z') { return; }
+		var axisL = axis.toLowerCase();
 
 		var mul = command.indexOf('*');
 		var count = Number(command.substring(3, mul));
-		var rate = Number(command.substring(mul + 1));
-
-		var absValue = g_JogLocationW[axis];
-		if (inches) { absValue /= 25.4; }
-
-		var newValue = ClampSafeAbsoluteMove(absValue, count * rate, axis, inches);
-		if (newValue == absValue) { return; }
-
-		g_JogLocationW[axis] = inches ? (newValue * 25.4) : newValue;
-
-		var feed;
-		switch (axis)
+		var step = Number(command.substring(mul + 1));
+		if (count < 0)
 		{
-			case "X": feed = grblParams["$110"]; break;
-			case "Y": feed = grblParams["$111"]; break;
-			case "Z": feed = grblParams["$112"]; break;
+			count = -count;
+			step = -step;
 		}
 
-		// absolute move in machine space, inches or mm
-		var gcode = "$J=G90 G53 " + (inches ? "G20 " : "G21 ") + axis + newValue.toFixed(3) + " F" + feed;
-		sendGcode(gcode);
+		if (axis != g_JogAxis || inches != g_bJogInches || step != g_JogStep)
+		{
+			// axis or unit is switched, clear everything
+			g_JogQueue = 0;
+			g_JogStep = step;
+			g_JogAxis = axis;
+			g_bJogInches = inches;
+			g_JogLocation = undefined;
+		}
+		g_JogQueue += count;
+
+		g_LastWheelMoveTime = Date.now();
+
+		if (g_JogLocation == undefined)
+		{
+			g_JogLocation = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL];
+		}
+
+		if (g_JogTimer == undefined)
+		{
+			g_LastBusyTime = Date.now(); // force state as busy
+			ProcessJogQueue();
+			g_JogTimer = setInterval(ProcessJogQueue, 100);
+		}
+
+		return;
 	}
 
 	if (command.startsWith("JXY"))
@@ -700,7 +819,7 @@ function HandleJogCommand(command)
 		if (xy[0] == 0 && xy[1] == 0)
 		{
 			// joystick is released, stop immediately
-			if (g_JogLocationXY != undefined)
+			if (g_JogXYLocation != undefined)
 			{
 				socket.emit('stop', {stop: false, jog: true, abort: false});
 			}
@@ -708,29 +827,37 @@ function HandleJogCommand(command)
 			return;
 		}
 
-		if (g_JogTimer == undefined)
+		if (g_JogXYTimer == undefined)
 		{
 			if (laststatus.comms.runStatus == "Idle")
 			{
 				BeginJogXY();
 			}
-			g_JogTimer = setInterval(function()
+			g_JogXYTime = g_JogXYLocation == undefined ? undefined : Date.now();
+			g_JogXYTimer = setInterval(function()
 			{
-				if (g_JogLocationXY == undefined)
+				if (g_JogXYLocation == undefined)
 				{
 					if (laststatus.comms.runStatus == "Idle")
 					{
 						BeginJogXY();
+						g_JogXYTime = Date.now();
 					}
 				}
 				else
 				{
-					QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, 0.1);
+					var t = Date.now();
+					QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, (t - g_JogXYTime) / 1000);
+					g_JogXYTime = t;
 				}
 			}, 100);
 		}
+
+		return;
 	}
 }
+
+var g_JogXYTime;
 
 // Shows the job menu
 function HandleJobMenu()
@@ -824,17 +951,20 @@ function SetupProbeMode(probeType)
 // Handles a successful probe job
 function HandleProbeJobComplete(probeType, probeZ)
 {
-	if (probeType == 0)
+	var showZ = false;
+	if (probeType == 0 && g_PendantSettings.zProbe.useProbeResult)
 	{
 		// z-probe
 		var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
 		var gcode = "G10 P0 L2 Z" + (probeZ - zProbeThickness).toFixed(3);
 		sendGcode(gcode);
+		showZ = true;
 	}
 	else if (probeType == 1)
 	{
 		// reference tool - just remember the current Z
 		g_TloRefZ = probeZ;
+		showZ = true;
 	}
 	else if (probeType == 2)
 	{
@@ -843,14 +973,19 @@ function HandleProbeJobComplete(probeType, probeZ)
 		g_TloRefZ = probeZ;
 		var gcode = "G10 P0 L2 Z" + (laststatus.machine.position.offset.z + delta).toFixed(3);
 		sendGcode(gcode);
+		showZ = true;
 	}
+
+	var text = [];
+	if (showZ)
+	{
+		text.push(" Z = " + probeZ + " mm");
+	}
+	text.push(" Disconnect probe");
 
 	ShowPendantDialog({
 		title: "= Probe Complete =",
-		text: [
-			" Z = " + probeZ + " mm",
-			" Disconnect probe",
-			],
+		text: text,
 		rButton: ["OK", function()
 		{
 			if (Metro.dialog.isOpen('#completeMsgModal'))
@@ -922,13 +1057,13 @@ function HandleProbeCommand(command)
 		{
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z < g_PendantSettings.safeLimitsZ.max)
 			{
-				gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.max.toFixed(3) + " F" + Number(grblParams["$112"]).toFixed(0);
+				gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.max.toFixed(3) + " F" + grblParams["$112"];
 				sendGcode(gcode);
 			}
 		}
 		else
 		{
-			var gcode = "$J=G21 G91 Z100" + " F" + Number(grblParams["$112"]).toFixed(0);
+			var gcode = "$J=G21 G91 Z100" + " F" + grblParams["$112"];
 			sendGcode(gcode);
 		}
 		g_ProbeJog = 1;
@@ -940,10 +1075,10 @@ function HandleProbeCommand(command)
 			// not idle or the probe is touching. can't go any lower
 			return;
 		}
+		var feed = grblParams["$112"] * g_ProbeZDownFeed / 100;
+		var gcode;
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
-			var feed = grblParams["$112"] * g_ProbeZDownFeed / 100;
-			var gcode;
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z > g_PendantSettings.safeLimitsZ.min)
 			{
 				if (SAFE_PROBE_JOG)
@@ -1043,8 +1178,14 @@ function HandleProbeCommand(command)
 					// retract 1
 					pass = 2;
 					var gcode = "G4 P0.4"; // wait a bit
+					if (probeType == 0 && g_PendantSettings.zProbe.style == "single" && !g_PendantSettings.zProbe.useProbeResult)
+					{
+						var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
+						gcode += "\nG10 G21 P0 L20 Z" + zProbeThickness.toFixed(3);
+					}
 					var feed = Math.max(Math.min(settings.retract1.feed, grblParams["$112"]), 10);
 					gcode += "\n$J=G21 G91 Z" + settings.retract1.travel.toFixed(3) + " F" + feed.toFixed(0);
+
 					if (settings.style == "dual")
 					{
 						// seek 2
@@ -1075,6 +1216,11 @@ function HandleProbeCommand(command)
 					// retract 2
 					pass = 3;
 					var gcode = "G4 P0.4"; // wait a bit
+					if (probeType == 0 && !g_PendantSettings.zProbe.useProbeResult)
+					{
+						var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
+						gcode += "\nG10 G21 P0 L20 Z" + zProbeThickness.toFixed(3);
+					}
 					var feed = Math.max(Math.min(settings.retract2.feed, grblParams["$112"]), 10);
 					gcode += "\n$J=G21 G91 Z" + settings.retract2.travel.toFixed(3) + " F" + feed.toFixed(0);
 
@@ -1094,10 +1240,10 @@ function HandleProbeCommand(command)
 	else if (command == "GOTOSENSOR")
 	{
 		// go to tool probe
-		var feedZ = Number(grblParams["$112"]);
-		var feedXY = Number(grblParams["$110"]);
-		var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.toolProbe.location.Z.toFixed(3) + " F" + feedZ.toFixed(0);
-		gcode += "\n$J=G53 G21 G90 X" + g_PendantSettings.toolProbe.location.X.toFixed(3) + " Y" + g_PendantSettings.toolProbe.location.Y.toFixed(3) + " F" + feedXY.toFixed(0);
+		var feedZ = grblParams["$112"];
+		var feedXY = grblParams["$110"];
+		var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.toolProbe.location.Z.toFixed(3) + " F" + feedZ;
+		gcode += "\n$J=G53 G21 G90 X" + g_PendantSettings.toolProbe.location.X.toFixed(3) + " Y" + g_PendantSettings.toolProbe.location.Y.toFixed(3) + " F" + feedXY;
 		sendGcode(gcode);
 	}
 }
@@ -1623,14 +1769,17 @@ window.ConnectPendant = function()
 		$('#ConnectPendant').addClass("disabled");
 		$('#DisconnectPendant').addClass("disabled");
 		printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Looking for pendant...</span>")
-		g_ComPorts = laststatus.comms.interfaces.ports.map(x => x.path);
-		var lastPort = localStorage.getItem("PendantPort");
-		if (lastPort)
-		{
-			// sort so the lastPort is first in the list
-			g_ComPorts.sort((a, b) => { if (a == lastPort) { return -1; } if (b == lastPort) { return 1; } return 0; });
-		}
-		TryNextPort();
+		SerialPort.list().then(function(ports)
+			{
+				g_ComPorts = ports.map(x => x.path);
+				var lastPort = localStorage.getItem("PendantPort");
+				if (lastPort)
+				{
+					// sort so the lastPort is first in the list
+					g_ComPorts.sort((a, b) => { if (a == lastPort) { return -1; } if (b == lastPort) { return 1; } return 0; });
+				}
+				TryNextPort();
+			});
 	}
 }
 
@@ -1911,16 +2060,16 @@ This setting can only be edited while the pendant is connected.">Pendant Name (u
 </div>
 
 <div id="PendantTab14" class="row mb-2">
-  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Rate</label>
+  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Steps</label>
   <div class="cell-sm-6">
-    <input id="PendantWheelRatesMm" data-role="input" data-clear-button="false" data-append="mm/click" data-editable="true" />
+    <input id="PendantWheelStepsMm" data-role="input" data-clear-button="false" data-append="mm/click" data-editable="true" />
   </div>
 </div>
 
 <div id="PendantTab15" class="row mb-2">
-  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Rate</label>
+  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Steps</label>
   <div class="cell-sm-6">
-    <input id="PendantWheelRatesIn" data-role="input" data-clear-button="false" data-append="inches/click" data-editable="true" />
+    <input id="PendantWheelStepsIn" data-role="input" data-clear-button="false" data-append="inches/click" data-editable="true" />
   </div>
 </div>
 
@@ -1990,22 +2139,30 @@ The names are separated by |. Each name is up to 16 characters">Job Checklist</l
   <label class="cell-sm-3 pt-1" title="Percentage of the rapid Z speed to use when Z Down button is pressed.
 Z Up always moves at full speed">Down Jog Speed</label>
   <div class="cell-sm-4">
-   <input id="PendantZDown" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
+    <input id="PendantZDown" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
   </div>
 </div>
 
 <div id="PendantTab23" class="row mb-2">
   <label class="cell-sm-3 pt-1">Plate Thickness</label>
   <div class="cell-sm-4">
-   <input id="PendantZThickness" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="mm" data-editable="true" />
+    <input id="PendantZThickness" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="mm" data-editable="true" />
   </div>
 </div>
 
-<div id="PendantTab24" class="row mb-2 pt-1 border-top bd-gray">
+<div id="PendantTab24" class="row mb-2">
+  <label class="cell-sm-3 pt-1" title="Check this to use the Z value from the probe contact instead of the position after the probing completes.
+They can differ by 0.1-0.2mm as the machine doesn't stop moving immediately on contact." >Use Exact Probe Result</label>
+  <div class="cell-sm-4">
+    <input id="PendantUseProbe" type="checkbox" data-role="checkbox" data-style="2" checked />
+  </div>
+</div>
+
+<div id="PendantTab25" class="row mb-2 pt-1 border-top bd-gray">
   <label class="cell-sm-6">First Pass</label>
 </div>
 
-<div id="PendantTab25" class="row mb-2">
+<div id="PendantTab26" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Initial movement to locate the Z probe">Seek</label>
   <div class="cell-sm-4">
     <input id="PendantZSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
@@ -2015,7 +2172,7 @@ Z Up always moves at full speed">Down Jog Speed</label>
   </div>
 </div>
 
-<div id="PendantTab26" class="row mb-2">
+<div id="PendantTab27" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Retraction after the Z probe was touched.
 Use short distance and slower speed if there is a second pass">Retract</label>
   <div class="cell-sm-4">
@@ -2026,11 +2183,11 @@ Use short distance and slower speed if there is a second pass">Retract</label>
   </div>
 </div>
 
-<div id="PendantTab27" class="row mb-2 pt-1 border-top bd-gray">
+<div id="PendantTab28" class="row mb-2 pt-1 border-top bd-gray">
   <label class="cell-sm-6">Second Pass</label>
 </div>
 
-<div id="PendantTab28" class="row mb-2">
+<div id="PendantTab29" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Second movement to locate the Z probe.
 Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
   <div class="cell-sm-4">
@@ -2041,7 +2198,7 @@ Use shorter distance and slower speed than the first pass for better accuracy">S
   </div>
 </div>
 
-<div id="PendantTab29" class="row mb-2">
+<div id="PendantTab210" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Retraction after the Z probe was touched">Retract</label>
   <div class="cell-sm-4">
     <input id="PendantZRetract2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
@@ -2330,8 +2487,8 @@ window.SelectSettingsTab = function(index)
 
 	var zStyle = $('#PendantZStyle').val();
 	ShowElement($('#PendantTab21,#PendantTab22'), tab2);
-	ShowElement($('#PendantTab23,#PendantTab25,#PendantTab26'), tab2 && zStyle != "default");
-	ShowElement($('#PendantTab24,#PendantTab27,#PendantTab28,#PendantTab29'), tab2 && zStyle == "dual");
+	ShowElement($('#PendantTab23,#PendantTab24,#PendantTab26,#PendantTab27'), tab2 && zStyle != "default");
+	ShowElement($('#PendantTab25,#PendantTab28,#PendantTab29,#PendantTab210'), tab2 && zStyle == "dual");
 
 	ShowElement($('#PendantTab31'), tab3);
 
@@ -2361,8 +2518,8 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.autoConnect = $('#PendantAutoConnect').prop('checked');
 	g_PendantSettings.displayUnits = $('#PendantDisplayUnits').val();
 
-	g_PendantSettings.wheelRatesMm = $('#PendantWheelRatesMm').val().split(',').map(Number);
-	g_PendantSettings.wheelRatesIn = $('#PendantWheelRatesIn').val().split(',').map(Number);
+	g_PendantSettings.wheelStepsMm = $('#PendantWheelStepsMm').val().split(',').map(Number);
+	g_PendantSettings.wheelStepsIn = $('#PendantWheelStepsIn').val().split(',').map(Number);
 
 	g_PendantSettings.safeLimitsEnabled = $('#PendantSafeLimits').prop('checked');
 	g_PendantSettings.safeLimitsX = {min: Number($('#PendantMinX').val()), max: Number($('#PendantMaxX').val())};
@@ -2375,6 +2532,7 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.zProbe.style = $('#PendantZStyle').val();
 	g_PendantSettings.zProbe.downSpeed = Math.min(Math.max($('#PendantZDown').val(), 10), 100);
 	g_PendantSettings.zProbe.thickness = Number($('#PendantZThickness').val());
+	g_PendantSettings.zProbe.useProbeResult = $('#PendantUseProbe').prop('checked');
 	g_PendantSettings.zProbe.seek1 = {travel: Number($('#PendantZSeek1T').val()), feed: Number($('#PendantZSeek1F').val())};
 	g_PendantSettings.zProbe.retract1 = {travel: Number($('#PendantZRetract1T').val()), feed: Number($('#PendantZRetract1F').val())};
 	g_PendantSettings.zProbe.seek2 = {travel: Number($('#PendantZSeek2T').val()), feed: Number($('#PendantZSeek2F').val())};
@@ -2425,13 +2583,13 @@ function UpdateSettingsControls(settings, romSettings)
 		$('#PendantDisplayUnits').val(settings.displayUnits);
 	}
 
-	var rate = undefined;
-	settings.wheelRatesMm.forEach(r => { rate = rate ? (rate + ", " + r.toFixed(2)) : r.toFixed(2); });
-	$('#PendantWheelRatesMm').val(rate);
+	var steps = undefined;
+	settings.wheelStepsMm.forEach(s => { steps = steps ? (steps + ", " + s.toFixed(2)) : s.toFixed(2); });
+	$('#PendantWheelStepsMm').val(steps);
 
-	rate = undefined;
-	settings.wheelRatesIn.forEach(r => { rate = rate ? (rate + ", " + r.toFixed(3)) : r.toFixed(3); });
-	$('#PendantWheelRatesIn').val(rate);
+	steps = undefined;
+	settings.wheelStepsIn.forEach(s => { steps = steps ? (steps + ", " + s.toFixed(3)) : s.toFixed(3); });
+	$('#PendantWheelStepsIn').val(steps);
 
 	$('#PendantSafeLimits').prop('checked', settings.safeLimitsEnabled);
 	var minX = settings.safeLimitsX.min;
@@ -2483,6 +2641,7 @@ function UpdateSettingsControls(settings, romSettings)
 		$('#PendantZThickness').val(settings.zProbe.thickness);
 	}
 
+	$('#PendantUseProbe').prop('checked', g_PendantSettings.zProbe.useProbeResult);
 	$('#PendantZDown').val(settings.zProbe.downSpeed);
 	$('#PendantZSeek1T').val(settings.zProbe.seek1.travel);
 	$('#PendantZSeek1F').val(settings.zProbe.seek1.feed);

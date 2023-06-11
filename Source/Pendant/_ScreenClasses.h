@@ -127,8 +127,8 @@ public:
 
 	void SetAxis( uint8_t axis );
 
-	// Parses the jog rate string from the PC - |<rate1>|<rate2> ... - up to 5
-	void ParseJogRates( const char *str );
+	// Parses the jog step rate string from the PC - |<rate1>|<rate2> ... - up to 5
+	void ParseJogSteps( const char *str );
 
 private:
 	static const uint16_t JOG_INACTIVITY_TIMER = 10000; // 10 seconds of inactivity will exit the jog screen
@@ -139,11 +139,11 @@ private:
 #endif
 
 		unsigned long m_LastInputTime; // time of last user input
-		unsigned long m_RateDownTime; // time of pressing the Rate button
+		unsigned long m_StepHoldTime; // duration of holding the Step button
 		uint8_t m_Axis:4; // current axis - one bit for X, Y and Z
 		uint8_t m_bShowStop:1; // show the stop button
 		uint8_t m_bShowActions:1; // show the actions to do during idle
-		uint8_t m_bShowRound:1; // show Round instead of Rate
+		uint8_t m_bShowAlign:1; // show Align instead of Step
 
 		// previous quantized joystick position
 		int8_t m_OldJoyX;
@@ -156,16 +156,16 @@ private:
 	ActiveState *GetActiveState( void );
 #endif
 
-	uint8_t m_Rate:3; // current rate index
-	uint8_t m_JogRateCount:3;
-	uint16_t m_JogRates[5];
+	uint8_t m_StepIndex:3; // current step rate index
+	uint8_t m_StepRateCount:3;
+	uint16_t m_StepRates[5];
 
 	enum
 	{
 		BUTTON_X = 0,
 		BUTTON_Y = 1,
 		BUTTON_Z = 2,
-		BUTTON_RATE = 3,
+		BUTTON_STEP = 3,
 		BUTTON_WCS = 4,
 		BUTTON_GOTO0 = 5,
 		BUTTON_STOP = 5,

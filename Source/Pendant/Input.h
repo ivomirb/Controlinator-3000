@@ -122,7 +122,7 @@ int8_t QuantizeJoystick( uint16_t val, const uint16_t calibration[4] )
 
 ///////////////////////////////////////////////////////////////////////////////
 // Wheel
-// Reading of hand wheel, greatly simplified version of https://github.com/gfvalvo/NewEncoder.
+// Reading of hand wheel, greatly simplified version of https://github.com/gfvalvo/NewEncoder
 // Converted to hard-coded values and global variables to save RAM
 
 const int16_t ENCODER_MIN_VALUE = -32000;
@@ -148,7 +148,7 @@ void EncoderAddValue( int8_t add )
 	g_EncoderValue += add;
 }
 
-#else
+#elif INLINE_NEW_ENCODER
 
 #define NE_STATE_MASK 0b00000111
 #define NE_DELTA_MASK 0b00011000
@@ -297,6 +297,50 @@ int16_t EncoderDrainValue( void )
 		}
 	}
 	return 0;
+}
+
+#else
+
+#include "NewEncoder.h"
+
+class HandWheelEncoder : public NewEncoder
+{
+public:
+	HandWheelEncoder( void ):
+		NewEncoder(2, 3, ENCODER_MIN_VALUE, ENCODER_MAX_VALUE, 0, HALF_PULSE)
+	{
+	}
+
+	int16_t DrainValue( void )
+	{
+		NewEncoder::EncoderState currentEncoderState;
+		if (getState(currentEncoderState))
+		{
+			int16_t delta = currentEncoderState.currentValue/2;
+			if (delta != 0)
+			{
+				noInterrupts();
+				liveState.currentValue -= delta*2;
+				interrupts();
+				return delta;
+			}
+		}
+		return 0;
+	}
+};
+
+HandWheelEncoder g_HandWheelEncoder;
+
+void InitializeEncoder( void )
+{
+	g_HandWheelEncoder.begin();
+	NewEncoder::EncoderState state;
+	g_HandWheelEncoder.getState(state);
+}
+
+int16_t EncoderDrainValue( void )
+{
+	return g_HandWheelEncoder.DrainValue();
 }
 
 #endif
