@@ -179,7 +179,7 @@ void ParseUnits( const char *units )
 {
 	g_bShowInches = *units == 'I';
 	units = strchr(units, '|');
-	g_JogScreen.ParseJogRates(units);
+	g_JogScreen.ParseJogSteps(units);
 }
 
 // Handles the PEN handshake prompt from the PC. responds with DENT:<version> and the current ROM settings
@@ -288,6 +288,15 @@ void ProcessCommand( const char *command, unsigned long time )
 
 void setup( void )
 {
+#ifndef EMULATOR
+	// HACK: 4808-based Arduino clones have I2C on pins D4 and D5 instead of A4 and A5. To support both on the same
+	// PCB, I have the pairs shorted together. For safety, the unused pair needs to be marked as INPUT. So
+	// here initialize all 4 pins as inputs to avoid interfering with I2C.
+	pinMode(A4, INPUT);
+	pinMode(A5, INPUT);
+	pinMode(4, INPUT);
+	pinMode(5, INPUT);
+#endif
 	Serial.begin(PENDANT_BAUD_RATE);
 	InitializeInput();
 	InitializeStatusStrings();
