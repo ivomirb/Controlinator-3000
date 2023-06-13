@@ -2,15 +2,9 @@
 
 const uint8_t BUTTON_JOYSTICK = 8;
 
-#ifdef ENABLE_ABORT_BUTTON
 const uint8_t BUTTON_ABORT = 9;
 #ifndef BUTTON_COUNT
 #define BUTTON_COUNT 10
-#endif
-#else
-#ifndef BUTTON_COUNT
-#define BUTTON_COUNT 9
-#endif
 #endif
 
 const uint16_t BUTTON_HOLD_TIME = 1000; // hold for 1 second
@@ -22,6 +16,7 @@ uint16_t g_ButtonState; // 0 - up, 1 - down
 uint16_t g_ButtonClick; // buttons clicked this frame
 uint16_t g_ButtonUnclick; // buttons released this frame
 uint16_t g_ButtonHold; // buttons held this frame
+uint16_t g_ButtonDown; // buttons that are logically pressed
 uint16_t g_ButtonChangeTimers[BUTTON_COUNT];
 
 bool TestBit( uint16_t flags, uint8_t bit )
@@ -47,6 +42,7 @@ void UpdateButtonState( uint16_t physicalState, uint16_t dt )
 	g_ButtonUnclick = ~physicalState & g_ButtonState;
 	g_ButtonState = physicalState;
 	g_ButtonHold = 0;
+	g_ButtonDown = 0;
 
 	// update timers
 	for (int i = 0; i < BUTTON_COUNT; i++)
@@ -68,12 +64,12 @@ void UpdateButtonState( uint16_t physicalState, uint16_t dt )
 			}
 			timer = t;
 		}
-	}
-}
 
-bool IsButtonDown( int8_t button )
-{
-	return TestBit(g_ButtonState, button) && (TestBit(g_ButtonHold, button) || g_ButtonChangeTimers[button] != 0xFFFF);
+		if ((g_ButtonState & mask) && ((g_ButtonHold & mask) || timer != 0xFFFF))
+		{
+			g_ButtonDown |= mask;
+		}
+	}
 }
 
 void ReleaseAllButtons( void )
@@ -148,7 +144,51 @@ void EncoderAddValue( int8_t add )
 	g_EncoderValue += add;
 }
 
-#elif INLINE_NEW_ENCODER
+#elif USE_NEW_ENCODER
+
+#include "NewEncoder.h"
+
+class HandWheelEncoder : public NewEncoder
+{
+public:
+	HandWheelEncoder( void ):
+		NewEncoder(g_EncoderPinA, g_EncoderPinB, ENCODER_MIN_VALUE, ENCODER_MAX_VALUE, 0, HALF_PULSE)
+	{
+	}
+
+	int16_t DrainValue( void )
+	{
+		NewEncoder::EncoderState currentEncoderState;
+		if (getState(currentEncoderState))
+		{
+			int16_t delta = currentEncoderState.currentValue / 2;
+			if (delta != 0)
+			{
+				noInterrupts();
+				liveState.currentValue -= delta * 2;
+				interrupts();
+				return delta;
+			}
+		}
+		return 0;
+	}
+};
+
+HandWheelEncoder g_HandWheelEncoder;
+
+void InitializeEncoder( void )
+{
+	g_HandWheelEncoder.begin();
+	NewEncoder::EncoderState state;
+	g_HandWheelEncoder.getState(state);
+}
+
+int16_t EncoderDrainValue( void )
+{
+	return g_HandWheelEncoder.DrainValue();
+}
+
+#else
 
 #define NE_STATE_MASK 0b00000111
 #define NE_DELTA_MASK 0b00011000
@@ -223,7 +263,7 @@ void EncoderPinChangeHandler(uint8_t index)
 			g_EncoderLiveState.currentClick = UpClick;
 			if (g_EncoderLiveState.currentValue < ENCODER_MAX_VALUE)
 			{
-				g_EncoderLiveState.currentValue--;
+				g_EncoderLiveState.currentValue++;
 			}
 		}
 		else if ((newStateVariable & NE_DELTA_MASK) == NE_DECREMENT_DELTA)
@@ -231,7 +271,7 @@ void EncoderPinChangeHandler(uint8_t index)
 			g_EncoderLiveState.currentClick = DownClick;
 			if (g_EncoderLiveState.currentValue > ENCODER_MIN_VALUE)
 			{
-				g_EncoderLiveState.currentValue++;
+				g_EncoderLiveState.currentValue--;
 			}
 		}
 		g_EncoderStateChanged = true;
@@ -297,50 +337,6 @@ int16_t EncoderDrainValue( void )
 		}
 	}
 	return 0;
-}
-
-#else
-
-#include "NewEncoder.h"
-
-class HandWheelEncoder : public NewEncoder
-{
-public:
-	HandWheelEncoder( void ):
-		NewEncoder(2, 3, ENCODER_MIN_VALUE, ENCODER_MAX_VALUE, 0, HALF_PULSE)
-	{
-	}
-
-	int16_t DrainValue( void )
-	{
-		NewEncoder::EncoderState currentEncoderState;
-		if (getState(currentEncoderState))
-		{
-			int16_t delta = currentEncoderState.currentValue/2;
-			if (delta != 0)
-			{
-				noInterrupts();
-				liveState.currentValue -= delta*2;
-				interrupts();
-				return delta;
-			}
-		}
-		return 0;
-	}
-};
-
-HandWheelEncoder g_HandWheelEncoder;
-
-void InitializeEncoder( void )
-{
-	g_HandWheelEncoder.begin();
-	NewEncoder::EncoderState state;
-	g_HandWheelEncoder.getState(state);
-}
-
-int16_t EncoderDrainValue( void )
-{
-	return g_HandWheelEncoder.DrainValue();
 }
 
 #endif

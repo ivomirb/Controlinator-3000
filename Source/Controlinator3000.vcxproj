@@ -97,6 +97,7 @@
     <ClInclude Include="Emulator\U8G2.h" />
     <ClInclude Include="Pendant\AlarmScreen.h" />
     <ClInclude Include="Pendant\CalibrationScreen.h" />
+    <ClInclude Include="Pendant\Config.h" />
     <ClInclude Include="Pendant\DialogScreen.h" />
     <ClInclude Include="Pendant\Graphics.h" />
     <ClInclude Include="Pendant\Input.h" />

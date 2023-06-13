@@ -7,17 +7,40 @@ void AlarmScreen::Activate( unsigned long time )
 
 void AlarmScreen::Draw( void )
 {
-	DrawText(5, 0, ROMSTR("[Alarm]"));
-	DrawUnusedButtons(0x7F);
-	DrawText(3, 1, ROMSTR("Check the PC"));
-	DrawText(3, 2, ROMSTR("for details"));
+#if PARTIAL_SCREEN_UPDATE
+	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
+	uint8_t state = 4;
 	if (m_bDismissed)
 	{
-		DrawText(14 + ((g_CurrentTime - m_DismissTime) / 200) % 3, 4, g_StrPlaceholder);
+		state = ((g_CurrentTime - m_DismissTime) / 200) % 3;
 	}
-	else
+	const bool bDrawButton = s_DrawState.bDrawAll || pDrawState->state != state;
+	pDrawState->state = state;
+#else
+	const bool bDrawButton = true;
+#endif
+
+	if (s_DrawState.bDrawAll)
 	{
-		DrawButton(BUTTON_DISMISS, ROMSTR("Dismiss"), m_bDismissed ? 3 : 7, false);
+		DrawText(5, 0, ROMSTR("[Alarm]"));
+		DrawUnusedButtons(0x7F);
+		DrawText(3, 1, ROMSTR("Check the PC"));
+		DrawText(3, 2, ROMSTR("for details"));
+	}
+
+	if (bDrawButton)
+	{
+		if (m_bDismissed)
+		{
+#if PARTIAL_SCREEN_UPDATE
+			DrawButton(BUTTON_DISMISS, ROMSTR("       "), 7, false); // clear background
+#endif
+			DrawText(14 + ((g_CurrentTime - m_DismissTime) / 200) % 3, 4, g_StrPlaceholder);
+		}
+		else
+		{
+			DrawButton(BUTTON_DISMISS, ROMSTR("Dismiss"), 7, false);
+		}
 	}
 }
 

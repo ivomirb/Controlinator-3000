@@ -25,7 +25,17 @@ private:
 	static const int DISMISS_TIMER = 1000; // wait 1 second after the alarm is cleared to close the dialog
 
 	unsigned long m_DismissTime; // the time of the first non-alarm frame after clicking the button
-	uint8_t m_bDismissed:1; // the button was clicked
+	uint8_t m_bDismissed : 1; // the button was clicked
+
+private:
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawState
+	{
+		uint8_t state;
+	};
+
+	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -53,8 +63,8 @@ private:
 	int16_t m_OldJoyX;
 	int16_t m_OldJoyY;
 
-	uint8_t m_bSendXY:1;
-	uint8_t m_Stage:4; // 0 - calibrate range. 1..8 - tests to calibrate deadzone
+	uint8_t m_bSendXY : 1;
+	uint8_t m_Stage : 4; // 0 - calibrate range. 1..8 - tests to calibrate deadzone
 
 	enum
 	{
@@ -64,6 +74,15 @@ private:
 	};
 
 	void Close( unsigned long time );
+
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawState
+	{
+		uint8_t stage;
+	};
+
+	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -95,9 +114,9 @@ private:
 		uint16_t m_Id;
 		char m_Lines[4][19];
 		char m_Buttons[2][MAX_BUTTON_SIZE + 1];
-		uint8_t m_CheckFlags:3;
-		uint8_t m_ButtonHoldFlags:2;
-		uint8_t m_ButtonWaitFlags:2;
+		uint8_t m_CheckFlags : 3;
+		uint8_t m_ButtonHoldFlags : 2;
+		uint8_t m_ButtonWaitFlags : 2;
 		unsigned long m_ButtonDismissTimer;
 
 #ifdef USE_SHARED_STATE
@@ -112,6 +131,16 @@ private:
 		BUTTON_1 = 3,
 		BUTTON_2 = 7,
 	};
+
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawState
+	{
+		uint16_t id;
+		uint8_t checkFlags;
+	};
+
+	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -140,10 +169,11 @@ private:
 
 		unsigned long m_LastInputTime; // time of last user input
 		unsigned long m_StepHoldTime; // duration of holding the Step button
-		uint8_t m_Axis:4; // current axis - one bit for X, Y and Z
-		uint8_t m_bShowStop:1; // show the stop button
-		uint8_t m_bShowActions:1; // show the actions to do during idle
-		uint8_t m_bShowAlign:1; // show Align instead of Step
+		unsigned long m_LastWheelTime; // time of the last sent wheel message
+		uint8_t m_Axis : 4; // current axis - one bit for X, Y and Z
+		uint8_t m_bShowStop : 1; // show the stop button
+		uint8_t m_bShowActions : 1; // show the actions to do during idle
+		uint8_t m_bShowAlign : 1; // show Align instead of Step
 
 		// previous quantized joystick position
 		int8_t m_OldJoyX;
@@ -156,8 +186,8 @@ private:
 	ActiveState *GetActiveState( void );
 #endif
 
-	uint8_t m_StepIndex:3; // current step rate index
-	uint8_t m_StepRateCount:3;
+	uint8_t m_StepIndex : 3; // current step rate index
+	uint8_t m_StepRateCount : 3;
 	uint16_t m_StepRates[5];
 
 	enum
@@ -175,6 +205,23 @@ private:
 
 	static void GetJoystick( int8_t *px, int8_t *py );
 	friend union ScreenTimeshare;
+
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawState
+	{
+		float wx, wy, wz;
+		float ox, oy, oz;
+		bool bWorkSpace;
+		bool bShowInches;
+		uint8_t axis : 4;
+		uint8_t bShowStop : 1;
+		uint8_t bShowActions : 1;
+		uint8_t bShowAlign : 1;
+		uint8_t stepIndex : 3;
+	};
+
+	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -223,6 +270,20 @@ private:
 		BUTTON_JOB = 6,
 		BUTTON_MACROS = 7,
 	};
+
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawState
+	{
+		float wx, wy, wz;
+		float ox, oy, oz;
+		bool bWorkSpace;
+		bool bShowInches;
+		bool bCanShowStop;
+		bool bJobRunning;
+	};
+
+	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -242,6 +303,15 @@ private:
 		BUTTON_PROBE_NEW_TOOL = 2,
 		BUTTON_BACK = 7,
 	};
+
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawState
+	{
+		uint8_t tloState;
+	};
+
+	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -294,8 +364,21 @@ private:
 	const uint16_t OVERRIDE_TIMER = 10000; // dismiss the override if not used for 10 seconds
 
 	unsigned long m_OverrideTimer;
-	uint8_t m_Override:4; // 0, BUTTON_FEED, BUTTON_SPEED
-	uint8_t m_JobState:4;
+	uint8_t m_Override : 4; // 0, BUTTON_FEED, BUTTON_SPEED
+	uint8_t m_JobState : 4;
+
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawState
+	{
+		float x, y, z;
+		uint16_t f, s;
+		bool bShowInches;
+		ScreenState screenState;
+		uint8_t _override;
+	};
+
+	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -306,6 +389,16 @@ class WelcomeScreen : public BaseScreen
 public:
 	virtual void Draw( void ) override;
 	virtual void Update( unsigned long time ) override;
+
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawState
+	{
+		char name[19];
+		bool bConnected;
+	};
+
+	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -330,8 +423,8 @@ public:
 	enum
 	{
 		BUTTON_CONNECT = 0,
-		BUTTON_UP = 2,
-		BUTTON_DOWN = 3,
+		BUTTON_UP = 1,
+		BUTTON_DOWN = 2,
 		BUTTON_PROBE = 6,
 		BUTTON_STOP = 5,
 		BUTTON_BACK = 7,
@@ -342,6 +435,17 @@ public:
 	uint8_t m_bJoggingUp : 1;
 	uint8_t m_bJoggingDown : 1;
 	uint8_t m_ProbeMode : 2;
+
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawState
+	{
+		uint8_t unusedButtons;
+		uint8_t bJoggingUp : 1;
+		uint8_t bJoggingDown : 1;
+	};
+
+	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
 };
 
 ///////////////////////////////////////////////////////////////////////////////

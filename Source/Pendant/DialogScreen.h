@@ -12,6 +12,18 @@ void DialogScreen::Draw( void )
 {
 	auto *pState = GetActiveState();
 
+#if PARTIAL_SCREEN_UPDATE
+	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->id != pState->m_Id || pDrawState->checkFlags != pState->m_CheckFlags;
+	pDrawState->id = pState->m_Id;
+	pDrawState->checkFlags = pState->m_CheckFlags;
+	if (!bDrawAll) return;
+	if (!s_DrawState.bDrawAll)
+	{
+		ClearBuffer();
+	}
+#endif
+
 	if (pState->m_Lines[0][0])
 	{
 		DrawText(0, 0, pState->m_Lines[0]);

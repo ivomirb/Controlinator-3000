@@ -1,5 +1,8 @@
 void MacroScreen::Draw( void )
 {
+#if PARTIAL_SCREEN_UPDATE
+	if (!s_DrawState.bDrawAll) return;
+#endif
 	DrawMachineStatus();
 	DrawUnusedButtons(m_UnusedMacros);
 	for (uint8_t i = 0; i < 7; i++)
@@ -12,7 +15,7 @@ void MacroScreen::Draw( void )
 		DrawButton(i, name, Strlen(name), TestBit(m_MacroHoldFlags, i));
 	}
 
-	u8g2.setColorIndex(1);
+	SetColorIndex(1);
 	DrawText(14, 4, g_StrBack);
 }
 
@@ -69,4 +72,8 @@ void MacroScreen::ParseMacros( const char *macros )
 		}
 		macros = end + 1;
 	}
+
+#if PARTIAL_SCREEN_UPDATE
+	s_DrawState.bDrawAll = true;
+#endif
 }

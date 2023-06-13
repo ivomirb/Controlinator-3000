@@ -2,6 +2,7 @@
 #include "U8G2.h"
 
 char g_Screen[64][128];
+char g_ScreenCopy[64][128];
 
 void U8G2::drawXBMP( int x, int y, int w, int h, const BYTE *bitmap )
 {
@@ -34,3 +35,18 @@ void U8G2::drawBox( int x, int y, int w, int h )
 		}
 	}
 }
+
+void U8G2::sendBuffer( void )
+{
+	memcpy(g_ScreenCopy, g_Screen, sizeof(g_Screen));
+}
+
+#if U8G2_FULL_BUFFER
+void U8G2::updateDisplayArea( int tx, int ty, int tw, int th )
+{
+	for (int y = ty * 8; y < (ty + th) * 8; y++)
+	{
+		memcpy(g_ScreenCopy[y] + tx * 8, g_Screen[y] + tx * 8, tw * 8);
+	}
+}
+#endif

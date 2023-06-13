@@ -2,46 +2,96 @@
 
 void ZProbeScreen::Draw( void )
 {
-	DrawMachineStatus();
-	uint8_t unusedButtons = 0x72;
-	if (m_bJoggingUp)
-	{
-		u8g2.drawBox(0, g_Rows[3] - 1, 4*7 + 2, 10);
-		u8g2.setColorIndex(0);
-	}
-	DrawText(0, 3, ROMSTR("Z Up"));
-	u8g2.setColorIndex(1);
-	if (m_bJoggingDown)
-	{
-		u8g2.drawBox(0, g_Rows[4] - 1, 6*7 + 2, 10);
-		u8g2.setColorIndex(0);
-	}
-	DrawText(0, 4, ROMSTR("Z Down"));
-	u8g2.setColorIndex(1);
-
+	uint8_t unusedButtons = 0x78;
 	if (g_MachineStatus == STATUS_IDLE && m_bConfirmed)
 	{
-		DrawButton(BUTTON_PROBE, ROMSTR("Probe"), 5, true);
 		unusedButtons &= ~(1 << BUTTON_PROBE);
 	}
-
-	DrawButton(BUTTON_BACK, g_StrBack, 4, false);
-	DrawText(0, 1, m_bConfirmed ? g_StrChecked : g_StrUnchecked);
-	if (m_ProbeMode == PROBE_Z)
-	{
-		DrawText(2, 1, ROMSTR("Connect probe"));
-	}
-	else
-	{
-		DrawText(2, 1, ROMSTR("Go to sensor"));
-	}
-
 	if (g_bCanShowStop)
 	{
-		DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
 		unusedButtons &= ~(1 << BUTTON_STOP);
 	}
-	DrawUnusedButtons(unusedButtons);
+
+#if PARTIAL_SCREEN_UPDATE
+	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
+	const bool bDrawAll = pDrawState->unusedButtons == unusedButtons;
+	const bool bDrawUp = s_DrawState.bDrawAll || pDrawState->bJoggingUp != m_bJoggingUp;
+	const bool bDrawDown = s_DrawState.bDrawAll || pDrawState->bJoggingDown != m_bJoggingDown;
+	pDrawState->unusedButtons = unusedButtons;
+	pDrawState->bJoggingUp = m_bJoggingUp;
+	pDrawState->bJoggingDown = m_bJoggingDown;
+	if (bDrawAll && !s_DrawState.bDrawAll)
+	{
+		ClearBuffer();
+	}
+#else
+	const bool bDrawButton = true, bDrawUp = true, bDrawDown = true, bDrawAll = true;
+#endif
+
+	if (s_DrawState.bDrawAll || bDrawAll)
+	{
+		DrawMachineStatus();
+		DrawButton(BUTTON_BACK, g_StrBack, 4, false);
+		if (m_ProbeMode == PROBE_Z)
+		{
+			DrawText(2, 1, ROMSTR("Connect probe"));
+		}
+		else
+		{
+			DrawText(2, 1, ROMSTR("Go to sensor"));
+		}
+
+		if (g_MachineStatus == STATUS_IDLE && m_bConfirmed)
+		{
+			DrawButton(BUTTON_PROBE, ROMSTR("Probe"), 5, true);
+		}
+
+		DrawText(0, 1, m_bConfirmed ? g_StrChecked : g_StrUnchecked);
+
+		if (g_bCanShowStop)
+		{
+			DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
+		}
+		DrawUnusedButtons(unusedButtons);
+	}
+
+	if (bDrawUp)
+	{
+		if (m_bJoggingUp)
+		{
+			DrawBox(0, g_Rows[2] - 1, 4*7 + 2, 10);
+			SetColorIndex(0);
+		}
+#if PARTIAL_SCREEN_UPDATE
+		else
+		{
+			SetColorIndex(0);
+			DrawBox(0, g_Rows[2] - 1, 4*7 + 2, 10);
+			SetColorIndex(1);
+		}
+#endif
+		DrawText(0, 2, ROMSTR("Z Up"));
+		SetColorIndex(1);
+	}
+
+	if (bDrawDown)
+	{
+		if (m_bJoggingDown)
+		{
+			DrawBox(0, g_Rows[3] - 1, 6*7 + 2, 10);
+			SetColorIndex(0);
+		}
+#if PARTIAL_SCREEN_UPDATE
+		else
+		{
+			SetColorIndex(0);
+			DrawBox(0, g_Rows[3] - 1, 6*7 + 2, 10);
+			SetColorIndex(1);
+		}
+#endif
+		DrawText(0, 3, ROMSTR("Z Down"));
+		SetColorIndex(1);
+	}
 }
 
 void ZProbeScreen::Update( unsigned long time )

@@ -1,6 +1,7 @@
 #define PENDANT_VERSION "1.0" // must match Pendant.js
 #define PENDANT_BAUD_RATE 38400 // must match Pendant.js
-#define ENABLE_ABORT_BUTTON // adds a new button that directly sends "ABORT" to the PC
+
+#include "Config.h"
 
 const uint8_t g_Font[] U8X8_PROGMEM =
 {
@@ -48,9 +49,9 @@ uint8_t g_TloState = 0;
 
 // feed and speed
 uint16_t g_FeedOverride;
-uint16_t g_RpmOverride;
+uint16_t g_SpeedOverride;
 uint16_t g_RealFeed;
-uint16_t g_RealRpm;
+uint16_t g_RealSpeed;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -59,10 +60,14 @@ BaseScreen *BaseScreen::s_pCurrentScreen;
 #include "_ScreenClasses.h"
 
 AlarmScreen g_AlarmScreen;
+#ifndef DISABLE_CALIBRATION_SCREEN
 CalibrationScreen g_CalibrationScreen;
+#endif
 DialogScreen g_DialogScreen;
 JogScreen g_JogScreen;
+#ifndef DISABLE_MACRO_SCREEN
 MacroScreen g_MacroScreen;
+#endif
 MainScreen g_MainScreen;
 ProbeMenuScreen g_ProbeMenuScreen;
 RunScreen g_RunScreen;
@@ -153,9 +158,9 @@ void ParseStatus( const char *status )
 	g_WorkY = atof(status); status = strchr(status, ',') + 1;
 	g_WorkZ = atof(status); status = strchr(status, '|') + 1;
 	g_FeedOverride = atoi(status); status = strchr(status, ',') + 1;
-	g_RpmOverride = atoi(status); status = strchr(status, ',') + 1;
+	g_SpeedOverride = atoi(status); status = strchr(status, ',') + 1;
 	g_RealFeed = atoi(status); status = strchr(status, ',') + 1;
-	g_RealRpm = atoi(status);
+	g_RealSpeed = atoi(status);
 }
 
 // Parses the STATUS2: string from the PC
@@ -244,13 +249,17 @@ void ProcessCommand( const char *command, unsigned long time )
 	}
 	if (strncmp(command, "MACROS:", 7) == 0)
 	{
+#ifndef DISABLE_MACRO_SCREEN
 		g_MacroScreen.ParseMacros(command + 7);
+#endif
 		return;
 	}
 
 	if (strncmp(command, "CAL:", 4) == 0)
 	{
+#ifndef DISABLE_CALIBRATION_SCREEN
 		g_CalibrationScreen.ProcessCommand(command + 4, time);
+#endif
 		return;
 	}
 
@@ -307,12 +316,19 @@ void setup( void )
 	g_WelcomeScreen.Activate(g_CurrentTime);
 }
 
+int g_Frame = 0;
+uint16_t g_Dtt = 0;
+uint16_t g_DtMax = 0;
+
 void loop( void )
 {
 	unsigned long time = millis();
 	if (time == 0) time = 1; // skip time 0, so 0 can be used as uninitialized value
 	uint16_t dt = (uint16_t)(time - g_CurrentTime);
 	g_CurrentTime = time;
+
+	g_Dtt += dt;
+	if (g_DtMax < dt) g_DtMax = dt;
 
 	// process connection status
 	if (g_bConnected)
@@ -351,11 +367,13 @@ void loop( void )
 	bool bScreenSelected = true;
 	if (!g_bConnected || g_MachineStatus == STATUS_DISCONNECTED)
 	{
+#ifndef DISABLE_CALIBRATION_SCREEN
 		if (g_CalibrationScreen.IsActive())
 		{
 			bScreenSelected = false;
 		}
 		else
+#endif
 		{
 			g_WelcomeScreen.Activate(time);
 		}
@@ -390,7 +408,6 @@ void loop( void )
 	UpdateButtonState(physicalButtons, dt);
 	UpdateJoystick();
 
-#ifdef ENABLE_ABORT_BUTTON
 	// check for Abort button
 	if (TestBit(g_ButtonClick, BUTTON_ABORT))
 	{
@@ -400,29 +417,44 @@ void loop( void )
 			g_MainScreen.Activate(time);
 		}
 	}
-#endif
 
+#ifndef DISABLE_CALIBRATION_SCREEN
 	if (g_CalibrationScreen.ShouldSendXY())
 	{
 		g_CalibrationScreen.SendXYUpdate(false);
 	}
+#endif
 
 	// update current screen
 	BaseScreen::s_pCurrentScreen->Update(time);
 
 	// draw
 #if U8G2_FULL_BUFFER
-	u8g2.clearBuffer();
-	u8g2.setColorIndex(1);
+	BaseScreen::ClearScreen();
+	SetColorIndex(1);
 	BaseScreen::s_pCurrentScreen->Draw();
+#if PARTIAL_SCREEN_UPDATE
+	BaseScreen::UpdateScreen();
+#else
 	u8g2.sendBuffer();
+#endif
 #else
 	u8g2.firstPage();
 	do
 	{
-		u8g2.setColorIndex(1);
+		SetColorIndex(1);
 		BaseScreen::s_pCurrentScreen->Draw();
 	}
 	while (u8g2.nextPage());
 #endif
+
+	g_Frame++;
+	if (g_Frame == 30)
+	{
+/*		Serial.print("FPS: ");
+		Serial.print(g_Dtt/30);
+		Serial.print(" MAX: ");
+		Serial.println(g_DtMax);*/
+		g_Frame=g_Dtt=g_DtMax=0;
+	}
 }

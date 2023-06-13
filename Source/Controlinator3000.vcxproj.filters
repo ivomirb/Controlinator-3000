@@ -107,6 +107,9 @@
     <ClInclude Include="Emulator\EEPROM.h">
       <Filter>Emulator</Filter>
     </ClInclude>
+    <ClInclude Include="Pendant\Config.h">
+      <Filter>Pendant</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="Pendant\font.bmp">

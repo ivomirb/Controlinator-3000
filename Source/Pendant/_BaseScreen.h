@@ -18,6 +18,13 @@ public:
 
 	bool IsActive( void ) const { return s_pCurrentScreen == this; }
 
+#if U8G2_FULL_BUFFER
+	static void ClearScreen( void );
+#if PARTIAL_SCREEN_UPDATE
+	static void UpdateScreen( void );
+#endif
+#endif
+
 	static BaseScreen *s_pCurrentScreen;
 
 protected:
@@ -46,11 +53,33 @@ protected:
 	// Closes the screen if it is active and switches to the default main screen
 	void CloseScreen( void );
 
+#if PARTIAL_SCREEN_UPDATE
+	struct DrawStateBase
+	{
+		uint16_t buttonState;
+		uint16_t buttonHold;
+		uint16_t buttonDown;
+		MachineStatus machineStatus;
+		bool bDrawAll;
+
+		uint8_t custom[32]; // for use by the current screen, initialized to 0xFF
+	};
+#else
+	struct DrawStateBase
+	{
+		const bool bDrawAll = true;
+	};
+#endif
+
+	static DrawStateBase s_DrawState;
+
 private:
-	static void DrawButtonInt( uint8_t button, const char *label, uint8_t labelLen, bool bHold, bool bFlash );
+	static void DrawButtonInt( uint8_t button, const char *label, uint8_t labelLen, bool bHold, bool bRomStr );
 };
 
 ///////////////////////////////////////////////////////////////////////////////
+
+BaseScreen::DrawStateBase BaseScreen::s_DrawState;
 
 void BaseScreen::Activate( unsigned long time )
 {
@@ -61,9 +90,46 @@ void BaseScreen::Activate( unsigned long time )
 	if (s_pCurrentScreen != this)
 	{
 		ReleaseAllButtons();
+
+#if PARTIAL_SCREEN_UPDATE
+		// clear draw state on screen change
+		memset(&s_DrawState, 0xFF, sizeof(s_DrawState));
+		g_DirtyRect[0] = g_DirtyRect[1] = 0;
+		g_DirtyRect[2] = 128;
+		g_DirtyRect[3] = 64;
+#endif
 	}
 	s_pCurrentScreen = this;
 }
+
+#if U8G2_FULL_BUFFER
+void BaseScreen::ClearScreen( void )
+{
+#if PARTIAL_SCREEN_UPDATE
+	s_DrawState.bDrawAll |= s_DrawState.buttonState != g_ButtonState ||
+		s_DrawState.buttonHold != g_ButtonHold ||
+		s_DrawState.buttonDown != g_ButtonDown ||
+		s_DrawState.machineStatus != g_MachineStatus;
+	if (!s_DrawState.bDrawAll)
+	{
+		return;
+	}
+#endif
+	ClearBuffer();
+}
+
+#if PARTIAL_SCREEN_UPDATE
+void BaseScreen::UpdateScreen( void )
+{
+	UpdateDirtyRect();
+	s_DrawState.buttonState = g_ButtonState;
+	s_DrawState.buttonHold = g_ButtonHold;
+	s_DrawState.buttonDown = g_ButtonDown;
+	s_DrawState.machineStatus = g_MachineStatus;
+	s_DrawState.bDrawAll = false;
+}
+#endif
+#endif
 
 int8_t BaseScreen::GetCurrentButton( void )
 {
@@ -118,7 +184,7 @@ void BaseScreen::DrawMachineStatus( void )
 
 void BaseScreen::DrawUnusedButtons( uint16_t mask )
 {
-	u8g2.setColorIndex(1);
+	SetColorIndex(1);
 	for (uint16_t i = 0; i < 8; i++)
 	{
 		if (TestBit(mask, i))
@@ -135,10 +201,10 @@ void BaseScreen::DrawUnusedButtons( uint16_t mask )
 	}
 }
 
-void BaseScreen::DrawButtonInt( uint8_t button, const char *label, uint8_t labelLen, bool bHold, bool bFlash )
+void BaseScreen::DrawButtonInt( uint8_t button, const char *label, uint8_t labelLen, bool bHold, bool bRomStr )
 {
 	Assert(Strlen(label) == labelLen);
-	u8g2.setColorIndex(1);
+	SetColorIndex(1);
 	if (button < 4)
 	{
 		// left side
@@ -146,15 +212,15 @@ void BaseScreen::DrawButtonInt( uint8_t button, const char *label, uint8_t label
 		int8_t y = g_Rows[button + 1];
 		if (bHold)
 		{
-			if (IsButtonDown(button))
+			if (TestBit(g_ButtonDown, button))
 			{
-				u8g2.drawBox(0, y - 1, labelLen*7 + 9, 10);
-				u8g2.setColorIndex(0);
+				DrawBox(0, y - 1, labelLen*7 + 9, 10);
+				SetColorIndex(0);
 			}
 			DrawTextXY(0, y, g_StrHold);
 			x++;
 		}
-		DrawTextInt(x*7 + 1, y, label, false, bFlash);
+		DrawTextInt(x*7 + 1, y, label, false, bRomStr);
 	}
 	else
 	{
@@ -163,15 +229,15 @@ void BaseScreen::DrawButtonInt( uint8_t button, const char *label, uint8_t label
 		int8_t y = g_Rows[button - 3];
 		if (bHold)
 		{
-			if (IsButtonDown(button))
+			if (TestBit(g_ButtonDown, button))
 			{
-				u8g2.drawBox(x*7, y - 1, labelLen*7 + 9, 10);
-				u8g2.setColorIndex(0);
+				DrawBox(x*7, y - 1, labelLen*7 + 9, 10);
+				SetColorIndex(0);
 			}
 			DrawTextXY(17*7 + 2, y, g_StrHold);
 			x--;
 		}
-		DrawTextInt(x*7 + 8, y, label, false, bFlash);
+		DrawTextInt(x*7 + 8, y, label, false, bRomStr);
 	}
 }
 

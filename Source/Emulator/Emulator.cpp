@@ -23,7 +23,6 @@
 
 #pragma warning(disable: 4244)
 
-#define EMULATOR
 #define MAX_LOADSTRING 100
 
 // Global Variables:
@@ -105,22 +104,20 @@ uint16_t g_PhysicalButtons;
 
 #define Sprintf sprintf_s
 #define strcpy_P strcpy_s
+#define Strcpy strcpy_s
 #define Strlen (int16_t)strlen
 #define strlen_P Strlen
 #define ROMSTR(x) x
 #define DEFINE_STRING(name, str) const char *name = str;
 #define PROGMEM
-#define U8G2_FULL_BUFFER 1
 
 #define pinMode(X, Y)
 
 #include "..\Pendant\Main.h"
 
-#ifdef ENABLE_ABORT_BUTTON
 const int ABORT_BUTTON_SIZE = 50;
 const int ABORT_BUTTON_X = SCREEN_X + 64*BMP_SCALE - ABORT_BUTTON_SIZE/2;
 const int ABORT_BUTTON_Y = SCREEN_Y - ABORT_BUTTON_SIZE - BUTTON_PADDING_Y;
-#endif
 
 // Reads font.bmp and generates font.h
 void GenerateFont( void )
@@ -260,9 +257,6 @@ int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 	info.bmiHeader.biPlanes = 1;
 	info.bmiHeader.biBitCount = 32;
 	g_ScreenBmp = CreateDIBSection(hdc, &info, DIB_RGB_COLORS, (void**)&g_ScreenBits, NULL, 0);
-	for (int y = 0; y < 64; y++)
-		for (int x = 0; x < 128; x++)
-			g_Screen[y][x] = (x+y)&1;
 
 
 	// uncomment this to convert font.bmp to font.txt
@@ -310,11 +304,9 @@ void OnPaint( HDC hdc )
 		Ellipse(hdc, x, y, x + BUTTON_SIZE, y + BUTTON_SIZE);
 	}
 
-#ifdef ENABLE_ABORT_BUTTON
 	// draw abort button
 	SelectObject(hdc, TestBit(g_ButtonState, BUTTON_ABORT) ? g_ButtonBrushUp : g_ButtonBrushDown);
 	Ellipse(hdc, ABORT_BUTTON_X, ABORT_BUTTON_Y, ABORT_BUTTON_X + ABORT_BUTTON_SIZE, ABORT_BUTTON_Y + ABORT_BUTTON_SIZE);
-#endif
 
 	// draw wheel arrows
 	SelectObject(hdc, TestBit(g_ButtonState, BUTTON_WHEEL_L) ? g_ButtonBrushUp : g_ButtonBrushDown);
@@ -403,7 +395,7 @@ void UpdateScreenBmp( void )
 	for (int y = 0; y < 64; y++)
 		for (int x = 0; x < 128; x++)
 		{
-			DWORD pix = g_Screen[y][x] ? 0xFFFFFF : 0x000000;
+			DWORD pix = g_ScreenCopy[y][x] ? 0xFFFFFF : 0x000000;
 			for (int yy = 0; yy < BMP_SCALE; yy++)
 			{
 				DWORD *bits = g_ScreenBits + ((y*BMP_SCALE+yy)*128 + x) * BMP_SCALE;
@@ -449,14 +441,12 @@ void OnLButtonDown( HWND hWnd, int mx, int my )
 		}
 	}
 
-#ifdef ENABLE_ABORT_BUTTON
 	if (mx >= ABORT_BUTTON_X && mx < ABORT_BUTTON_X + ABORT_BUTTON_SIZE && my >= ABORT_BUTTON_Y && my < ABORT_BUTTON_Y + ABORT_BUTTON_SIZE)
 	{
 		g_MouseCapture = BUTTON_ABORT + 1;
 		SetCapture(hWnd);
 		return;
 	}
-#endif
 
 	if (my >= WHEEL_Y && my < WHEEL_Y + WHEEL_SIZE)
 	{

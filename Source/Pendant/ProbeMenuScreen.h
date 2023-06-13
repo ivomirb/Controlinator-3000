@@ -1,5 +1,16 @@
 void ProbeMenuScreen::Draw( void )
 {
+#if PARTIAL_SCREEN_UPDATE
+	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->tloState != g_TloState;
+	pDrawState->tloState = g_TloState;
+	if (!bDrawAll) return;
+	if (!s_DrawState.bDrawAll)
+	{
+		ClearBuffer();
+	}
+#endif
+
 	DrawMachineStatus();
 	uint8_t unusedButtons = 0x78;
 	DrawButton(BUTTON_PROBE_Z, ROMSTR("Probe Z"), 7, false);

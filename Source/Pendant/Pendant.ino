@@ -11,24 +11,20 @@ uint16_t ReadButtons( void );
 
 #define Sprintf sprintf
 #define Strlen strlen
+#define Strcpy strcpy
 #define Assert(x) (0)
 #define ROMSTR(x) F(x)
 #define DEFINE_STRING(name, str) const char PROGMEM name##Str[] = str; const __FlashStringHelper *name = (__FlashStringHelper*)name##Str;
-
-#define U8G2_FULL_BUFFER 0
 
 const int g_EncoderPinA = 2;
 const int g_EncoderPinB = 3;
 const int g_JoyPinX = A6; // X and Y are swapped to match how the joystick is mounted on the pendant
 const int g_JoyPinY = A7;
+const uint8_t g_ButtonPins[] PROGMEM = {A3, A2, A1, A0, 7, 8, 9, 10, 12, 6};
 
 #include "Main.h"
 
-#ifdef ENABLE_ABORT_BUTTON
-const uint8_t g_ButtonPins[BUTTON_COUNT] PROGMEM = {A3, A2, A1, A0, 6, 7, 8, 9, 12, 5};
-#else
-const uint8_t g_ButtonPins[BUTTON_COUNT] PROGMEM = {A3, A2, A1, A0, 6, 7, 8, 9, 12};
-#endif
+static_assert(sizeof(g_ButtonPins) == BUTTON_COUNT, "wrong button count");
 
 void InitializeInput( void )
 {
