@@ -478,7 +478,7 @@ function IsSafeAbsoluteMove(value, delta, axis, bInches)
 		return true;
 	}
 
-	var limits = g_PendantSettings["safeLimits" + axis];
+	var limits = GetSafeLimits(axis);
 	var min = limits.min;
 	var max = limits.max;
 	if (min >= max) return false; // bad range
@@ -498,7 +498,7 @@ function ClampSafeAbsoluteMove(value, delta, axis, bInches)
 		return value + delta;
 	}
 
-	var limits = g_PendantSettings["safeLimits" + axis];
+	var limits = GetSafeLimits(axis);
 	var min = limits.min;
 	var max = limits.max;
 	if (min >= max) return value; // bad range
@@ -1065,9 +1065,10 @@ function HandleProbeCommand(command)
 		}
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
-			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z < g_PendantSettings.safeLimitsZ.max)
+			var limits = GetSafeLimits('Z');
+			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z < limits.max)
 			{
-				gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.max.toFixed(3) + " F" + grblParams["$112"];
+				gcode = "$J=G53 G21 G90 Z" + limits.max.toFixed(3) + " F" + grblParams["$112"];
 				sendGcode(gcode);
 			}
 		}
@@ -1089,15 +1090,16 @@ function HandleProbeCommand(command)
 		var gcode;
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
-			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z > g_PendantSettings.safeLimitsZ.min)
+			var limits = GetSafeLimits('Z');
+			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z > limits.min)
 			{
 				if (SAFE_PROBE_JOG)
 				{
-					gcode = "G38.3 G21 G90 Z" + (g_PendantSettings.safeLimitsZ.min - laststatus.machine.position.offset.z).toFixed(3) + " F" + feed.toFixed(0);
+					gcode = "G38.3 G21 G90 Z" + (limits.min - laststatus.machine.position.offset.z).toFixed(3) + " F" + feed.toFixed(0);
 				}
 				else
 				{
-					gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.min.toFixed(3) + " F" + feed.toFixed(0);
+					gcode = "$J=G53 G21 G90 Z" + limits.min.toFixed(3) + " F" + feed.toFixed(0);
 				}
 			}
 		}
@@ -1193,8 +1195,14 @@ function HandleProbeCommand(command)
 						var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
 						gcode += "\nG10 G21 P0 L20 Z" + zProbeThickness.toFixed(3);
 					}
+					var maxZ = GetSafeLimits('Z').max;
+					var travel = settings.retract1.travel;
+					if (settings.style == "single" && g_PendantSettings.safeLimitsEnabled)
+					{
+						travel = Math.min(travel, Math.max(maxZ - probe.z, 0));
+					}
 					var feed = Math.max(Math.min(settings.retract1.feed, grblParams["$112"]), 10);
-					gcode += "\n$J=G21 G91 Z" + settings.retract1.travel.toFixed(3) + " F" + feed.toFixed(0);
+					gcode += "\n$J=G21 G91 Z" + travel.toFixed(3) + " F" + feed.toFixed(0);
 
 					if (settings.style == "dual")
 					{
@@ -1231,8 +1239,14 @@ function HandleProbeCommand(command)
 						var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
 						gcode += "\nG10 G21 P0 L20 Z" + zProbeThickness.toFixed(3);
 					}
+					var maxZ = GetSafeLimits('Z').max;
+					var travel = settings.retract2.travel;
+					if (g_PendantSettings.safeLimitsEnabled)
+					{
+						travel = Math.min(travel, Math.max(maxZ - probe.z, 0));
+					}
 					var feed = Math.max(Math.min(settings.retract2.feed, grblParams["$112"]), 10);
-					gcode += "\n$J=G21 G91 Z" + settings.retract2.travel.toFixed(3) + " F" + feed.toFixed(0);
+					gcode += "\n$J=G21 G91 Z" + travel.toFixed(3) + " F" + feed.toFixed(0);
 
 					// finished (dual pass)
 					g_LastProbeZ = probe.z;
@@ -2034,6 +2048,7 @@ function UpdateCalibration()
 // Settings
 
 window.g_SettingsTabIndex = 0; // current settings tab
+window.g_bZThicknessValid = false; // if the probe thickness value was modified
 
 // HTML for the body of the settings dialog
 // Note: intially this was wrapped in a form, however a button in the form causes the app to reset. Seems to work without a form anyway
@@ -2101,13 +2116,16 @@ The names are separated by |. Each name is up to 16 characters">Job Checklist</l
 </div>
 
 <div id="PendantTab18" class="row mb-2 pt-1 border-top bd-gray">
-  <div class="cell-sm-6">
+  <div class="cell-sm-4">
     <input id="PendantSafeLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Enable Safe Jogging Area" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
   </div>
 </div>
 
 <div id="PendantTab19" class="row mb-2">
-  <label class="cell-sm-2"></label>
+  <div class="cell-sm-2">
+    <button id="PendantResetSafeLimits" class="button" onclick="ResetSafeLimits();" title="Reset to the default size based on the Grbl settings.
+The machine needs to be connected">Reset</button>
+  </div>
   <div class="cell-sm-4">
     <input id="PendantMinX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min X" data-append="mm" data-editable="true" />
   </div>
@@ -2156,7 +2174,10 @@ Z Up always moves at full speed">Down Jog Speed</label>
 <div id="PendantTab23" class="row mb-2">
   <label class="cell-sm-3 pt-1">Plate Thickness</label>
   <div class="cell-sm-4">
-    <input id="PendantZThickness" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="mm" data-editable="true" />
+    <input id="PendantZThickness" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="mm" data-editable="true" onchange="g_bZThicknessValid = true; $('#PendantResetZThickness').prop('disabled', false);" />
+  </div>
+  <div class="cell-sm-4">
+    <button id="PendantResetZThickness" class="button" onclick="g_bZThicknessValid = false; $('#PendantZThickness').val(localStorage.getItem('z0platethickness')); $('#PendantResetZThickness').prop('disabled', true);" title="Reset to the default value from OpenBuilds">Reset</button>
   </div>
 </div>
 
@@ -2198,7 +2219,7 @@ Use short distance and slower speed if there is a second pass">Retract</label>
 </div>
 
 <div id="PendantTab29" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Second movement to locate the Z probe.
+  <label class="cell-sm-3 pt-1" title="Second movement to locate the Z probe. Needs to be larger than the Retract from the first pass.
 Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
   <div class="cell-sm-4">
     <input id="PendantZSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
@@ -2280,7 +2301,7 @@ Use short distance and slower speed if there is a second pass">Retract</label>
 </div>
 
 <div id="PendantTab38" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Second movement to measure the tool.
+  <label class="cell-sm-3 pt-1" title="Second movement to measure the tool. Needs to be larger than the Retract from the first pass.
 Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
   <div class="cell-sm-4">
     <input id="PendantToolSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
@@ -2489,7 +2510,7 @@ window.SelectSettingsTab = function(index)
 	ShowElement($('#PendantTab11,#PendantTab12,#PendantTab13,#PendantTab16,#PendantTab17,#PendantTab18,#PendantTab19,#PendantTab110,#PendantTab111'), tab1);
 
 	var safeLimitsDisabled = !$('#PendantSafeLimits').prop('checked');
-	$('#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled);
+	$('#PendantResetSafeLimits,#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled);
 
 	var displayUnits = $('#PendantDisplayUnits').val();
 	ShowElement($('#PendantTab14'), tab1 && displayUnits != "inches");
@@ -2521,6 +2542,50 @@ window.SelectSettingsTab = function(index)
 	}
 }
 
+function GetDefaultSafeLimits(axis)
+{
+	var param;
+	switch (axis)
+	{
+		case "X": param = grblParams["$130"]; break;
+		case "Y": param = grblParams["$131"]; break;
+		case "Z": param = grblParams["$132"]; break;
+	}
+
+	if (laststatus.connectionStatus != 0 && param != undefined)
+	{
+		return {min: 3 - param, max: -3};
+	}
+	return {min: 0, max: 0};
+}
+
+function GetSettingsSafeLimits(settings, axis)
+{
+	var limits = settings["safeLimits" + axis];
+	return (limits.min == 0 && limits.max == 0) ? GetDefaultSafeLimits(axis) : limits;
+}
+
+function GetSafeLimits(axis)
+{
+	return GetSettingsSafeLimits(g_PendantSettings, axis);
+}
+
+window.ResetSafeLimits = function()
+{
+	if (laststatus.connectionStatus != 0)
+	{
+		var limits = GetDefaultSafeLimits('X');
+		$('#PendantMinX').val(limits.min);
+		$('#PendantMaxX').val(limits.max);
+		limits = GetDefaultSafeLimits('Y');
+		$('#PendantMinY').val(limits.min);
+		$('#PendantMaxY').val(limits.max);
+		limits = GetDefaultSafeLimits('Z');
+		$('#PendantMinZ').val(limits.min);
+		$('#PendantMaxZ').val(limits.max);
+	}
+}
+
 // Reads the settings from the dialog and saves them
 function ReadSettingsFromDialog(updateRomSettings)
 {
@@ -2541,7 +2606,7 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.jobChecklist = $('#PendantJobChecklist').val();
 	g_PendantSettings.zProbe.style = $('#PendantZStyle').val();
 	g_PendantSettings.zProbe.downSpeed = Math.min(Math.max($('#PendantZDown').val(), 10), 100);
-	g_PendantSettings.zProbe.thickness = Number($('#PendantZThickness').val());
+	g_PendantSettings.zProbe.thickness = g_bZThicknessValid ? Number($('#PendantZThickness').val()) : undefined;
 	g_PendantSettings.zProbe.useProbeResult = $('#PendantUseProbe').prop('checked');
 	g_PendantSettings.zProbe.seek1 = {travel: Number($('#PendantZSeek1T').val()), feed: Number($('#PendantZSeek1F').val())};
 	g_PendantSettings.zProbe.retract1 = {travel: Number($('#PendantZRetract1T').val()), feed: Number($('#PendantZRetract1F').val())};
@@ -2576,6 +2641,7 @@ function ReadSettingsFromDialog(updateRomSettings)
 	// save to persistent storage and push to the pendant
 	localStorage.setItem("PendantSettings", JSON.stringify(g_PendantSettings));
 	PushSettings(updateRomSettings);
+	console.log(g_PendantSettings);
 }
 
 // Updates the settings controls based on the specified collection
@@ -2602,32 +2668,18 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantWheelStepsIn').val(steps);
 
 	$('#PendantSafeLimits').prop('checked', settings.safeLimitsEnabled);
-	var minX = settings.safeLimitsX.min;
-	var maxX = settings.safeLimitsX.max;
-	if (minX == 0 && maxX == 0 && grblParams.$130)
-	{
-		minX = -Number(grblParams.$130);
-	}
-	$('#PendantMinX').val(minX);
-	$('#PendantMaxX').val(maxX);
 
-	var minY = settings.safeLimitsY.min;
-	var maxY = settings.safeLimitsY.max;
-	if (minY == 0 && maxY == 0 && grblParams.$131)
-	{
-		minY = -Number(grblParams.$131);
-	}
-	$('#PendantMinY').val(minY);
-	$('#PendantMaxY').val(maxY);
+	var limits = GetSettingsSafeLimits(settings, 'X');
+	$('#PendantMinX').val(limits.min);
+	$('#PendantMaxX').val(limits.max);
 
-	var minZ = settings.safeLimitsZ.min;
-	var maxZ = settings.safeLimitsZ.max;
-	if (minZ == 0 && maxZ == 0 && grblParams.$132)
-	{
-		minZ = -Number(grblParams.$132);
-	}
-	$('#PendantMinZ').val(minZ);
-	$('#PendantMaxZ').val(maxZ);
+	limits = GetSettingsSafeLimits(settings, 'Y');
+	$('#PendantMinY').val(limits.min);
+	$('#PendantMaxY').val(limits.max);
+
+	limits = GetSettingsSafeLimits(settings, 'Z');
+	$('#PendantMinZ').val(limits.min);
+	$('#PendantMaxZ').val(limits.max);
 
 	// advanced settings
 	$('#PendantPauseSpindle').prop('checked', settings.pauseSpindle);
@@ -2642,14 +2694,18 @@ function UpdateSettingsControls(settings, romSettings)
 	{
 		$('#PendantZStyle').val(settings.zProbe.style);
 	}
-	if (settings.zProbe.thickness == undefined)
+
+ 	if (settings.zProbe.thickness == undefined)
 	{
+		g_bZThicknessValid = false;
 		$('#PendantZThickness').val(localStorage.getItem('z0platethickness'));
 	}
 	else
 	{
+		g_bZThicknessValid = true;
 		$('#PendantZThickness').val(settings.zProbe.thickness);
 	}
+	$('#PendantResetZThickness').prop('disabled', !g_bZThicknessValid);
 
 	$('#PendantUseProbe').prop('checked', g_PendantSettings.zProbe.useProbeResult);
 	$('#PendantZDown').val(settings.zProbe.downSpeed);
@@ -2808,6 +2864,25 @@ function CleanupOldVersion()
 	}
 }
 
+// Recursively merge stored settings into current if the name and type match
+function MergeSettingsRec(current, stored)
+{
+	for (var prop in stored)
+	{
+		if (prop in current && typeof(stored[prop]) == typeof(current[prop]) && Array.isArray(stored[prop]) == Array.isArray(current[prop]))
+		{
+			if (typeof(current[prop]) == 'object' && !Array.isArray(current[prop]))
+			{
+				MergeSettingsRec(current[prop], stored[prop]);
+			}
+			else
+			{
+				current[prop] = stored[prop];
+			}
+		}
+	}
+}
+
 // Initializes the plugin. tries to auto-connect if enabled
 function InitializePendantPlugin()
 {
@@ -2820,10 +2895,7 @@ function InitializePendantPlugin()
 		var settings = JSON.parse(localStorage.getItem("PendantSettings"));
 		if (settings)
 		{
-			for (var prop in settings)
-			{
-				g_PendantSettings[prop] = settings[prop];
-			}
+			MergeSettingsRec(g_PendantSettings, settings);
 		}
 
 		$('#DisconnectPendant').on('click', DisconnectPendant);
