@@ -42,7 +42,6 @@
 #error "Unknown microcontroller"
 #endif
 
-
 #if PARTIAL_SCREEN_UPDATE && !U8G2_FULL_BUFFER
 #error PARTIAL_SCREEN_UPDATE requires U8G2_FULL_BUFFER
 #endif

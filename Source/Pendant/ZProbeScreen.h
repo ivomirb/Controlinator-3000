@@ -14,9 +14,9 @@ void ZProbeScreen::Draw( void )
 
 #if PARTIAL_SCREEN_UPDATE
 	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
-	const bool bDrawAll = pDrawState->unusedButtons == unusedButtons;
-	const bool bDrawUp = s_DrawState.bDrawAll || pDrawState->bJoggingUp != m_bJoggingUp;
-	const bool bDrawDown = s_DrawState.bDrawAll || pDrawState->bJoggingDown != m_bJoggingDown;
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->unusedButtons == unusedButtons;
+	const bool bDrawUp = bDrawAll || pDrawState->bJoggingUp != m_bJoggingUp;
+	const bool bDrawDown = bDrawAll || pDrawState->bJoggingDown != m_bJoggingDown;
 	pDrawState->unusedButtons = unusedButtons;
 	pDrawState->bJoggingUp = m_bJoggingUp;
 	pDrawState->bJoggingDown = m_bJoggingDown;
@@ -28,9 +28,9 @@ void ZProbeScreen::Draw( void )
 	const bool bDrawButton = true, bDrawUp = true, bDrawDown = true, bDrawAll = true;
 #endif
 
-	if (s_DrawState.bDrawAll || bDrawAll)
+	if (bDrawAll)
 	{
-		DrawMachineStatus();
+		DrawMachineStatus(g_StrPROBE, 5);
 		DrawButton(BUTTON_BACK, g_StrBack, 4, false);
 		if (m_ProbeMode == PROBE_Z)
 		{
@@ -107,20 +107,20 @@ void ZProbeScreen::Update( unsigned long time )
 	{
 		if (TestBit(g_ButtonState, BUTTON_UP))
 		{
-			Serial.print(g_StrPROBE);
+			Serial.print(g_StrPROBE2);
 			Serial.println(ROMSTR("Z+"));
 			m_bJoggingUp = true;
 		}
 		else if (TestBit(g_ButtonState, BUTTON_DOWN))
 		{
-			Serial.print(g_StrPROBE);
+			Serial.print(g_StrPROBE2);
 			Serial.println(ROMSTR("Z-"));
 			m_bJoggingDown = true;
 		}
 	}
 	if ((m_bJoggingUp && !TestBit(g_ButtonState, BUTTON_UP)) || (m_bJoggingDown && !TestBit(g_ButtonState, BUTTON_DOWN)))
 	{
-		Serial.print(g_StrPROBE);
+		Serial.print(g_StrPROBE2);
 		Serial.println(ROMSTR("Z="));
 		m_bJoggingUp = m_bJoggingDown = false;
 	}
@@ -134,19 +134,19 @@ void ZProbeScreen::Update( unsigned long time )
 	{
 		if (m_ProbeMode == PROBE_Z)
 		{
-			Serial.print(g_StrPROBE);
+			Serial.print(g_StrPROBE2);
 			Serial.println(ROMSTR("CONNECT"));
 			m_bConfirmed = true;
 		}
 		else
 		{
-			Serial.print(g_StrPROBE);
+			Serial.print(g_StrPROBE2);
 			Serial.println(ROMSTR("GOTOSENSOR"));
 		}
 	}
 	else if (button == BUTTON_BACK)
 	{
-		Serial.print(g_StrPROBE);
+		Serial.print(g_StrPROBE2);
 		Serial.println(g_StrCANCEL);
 		if (g_TloState & TLO_ENABLED)
 		{
@@ -159,7 +159,7 @@ void ZProbeScreen::Update( unsigned long time )
 	}
 	else if (m_bConfirmed && g_MachineStatus == STATUS_IDLE && TestBit(g_ButtonHold, BUTTON_PROBE))
 	{
-		Serial.print(g_StrPROBE);
+		Serial.print(g_StrPROBE2);
 		Serial.print(g_StrSTART);
 		Serial.println(m_ProbeMode);
 		CloseScreen();
@@ -176,7 +176,7 @@ void ZProbeScreen::Activate( unsigned long time, ProbeMode mode, bool bNotify )
 	m_ProbeMode = mode;
 	if (bNotify)
 	{
-		Serial.print(g_StrPROBE);
+		Serial.print(g_StrPROBE2);
 		Serial.print(g_StrENTER);
 		Serial.println(m_ProbeMode);
 	}
@@ -190,7 +190,7 @@ void ZProbeScreen::Deactivate( void )
 {
 	if (m_bJoggingUp || m_bJoggingDown)
 	{
-		Serial.print(g_StrPROBE);
+		Serial.print(g_StrPROBE2);
 		Serial.println(ROMSTR("Z="));
 		m_bJoggingUp = false;
 		m_bJoggingDown = false;

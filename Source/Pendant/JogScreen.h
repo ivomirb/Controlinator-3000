@@ -2,7 +2,7 @@ const int WHEEL_UPDATE_TIME = 100; // don't send wheel updates more than once ev
 
 const char g_AxisName[5] = {' ', 'X', 'Y', ' ', 'Z'};
 
-#ifdef USE_SHARED_STATE
+#if USE_SHARED_STATE
 JogScreen::ActiveState *JogScreen::GetActiveState( void )
 {
 	Assert(IsActive());
@@ -28,10 +28,10 @@ void JogScreen::Draw( void )
 
 #if PARTIAL_SCREEN_UPDATE
 	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
-	const bool bDrawAll = pDrawState->bWorkSpace != g_bWorkSpace || pDrawState->bShowInches != g_bShowInches ||
-		pDrawState->axis != pState->m_Axis || pDrawState->bShowStop != pState->m_bShowStop ||
-		pDrawState->bShowActions != pState->m_bShowActions || pDrawState->bShowAlign != pState->m_bShowAlign ||
-		pDrawState->stepIndex != m_StepIndex;
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->bWorkSpace != g_bWorkSpace ||
+		pDrawState->bShowInches != g_bShowInches || pDrawState->axis != pState->m_Axis ||
+		pDrawState->bShowStop != pState->m_bShowStop || pDrawState->bShowActions != pState->m_bShowActions ||
+		pDrawState->bShowAlign != pState->m_bShowAlign || pDrawState->stepIndex != m_StepIndex;
 	pDrawState->bWorkSpace = g_bWorkSpace;
 	pDrawState->bShowInches = g_bShowInches;
 	pDrawState->axis = pState->m_Axis;
@@ -44,9 +44,9 @@ void JogScreen::Draw( void )
 		ClearBuffer();
 	}
 
-	const bool bDrawX = bDrawAll || s_DrawState.bDrawAll || pDrawState->wx != g_WorkX || pDrawState->ox != g_OffsetX;
-	const bool bDrawY = bDrawAll || s_DrawState.bDrawAll || pDrawState->wy != g_WorkY || pDrawState->oy != g_OffsetY;
-	const bool bDrawZ = bDrawAll || s_DrawState.bDrawAll || pDrawState->wz != g_WorkZ || pDrawState->oz != g_OffsetZ;
+	const bool bDrawX = bDrawAll || pDrawState->wx != g_WorkX || pDrawState->ox != g_OffsetX;
+	const bool bDrawY = bDrawAll || pDrawState->wy != g_WorkY || pDrawState->oy != g_OffsetY;
+	const bool bDrawZ = bDrawAll || pDrawState->wz != g_WorkZ || pDrawState->oz != g_OffsetZ;
 	pDrawState->wx = g_WorkX;
 	pDrawState->ox = g_OffsetX;
 	pDrawState->wy = g_WorkY;
@@ -57,9 +57,9 @@ void JogScreen::Draw( void )
 	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawAll = true;
 #endif
 
-	if (s_DrawState.bDrawAll || bDrawAll)
+	if (bDrawAll)
 	{
-		DrawMachineStatus();
+		DrawMachineStatus(g_StrJOG, 3);
 		DrawText(13, 1, g_bWorkSpace ? g_StrWCS : g_StrMCS);
 		if ((pState->m_Axis & (pState->m_Axis-1)) == 0)
 		{
@@ -246,7 +246,7 @@ void JogScreen::Update( unsigned long time )
 		if (pState->m_bShowAlign && TestBit(g_ButtonHold, BUTTON_STEP))
 		{
 			// Step button held down for full time, align to the step rate
-			Serial.print(g_StrJOG);
+			Serial.print(g_StrJOG2);
 			uint16_t step = m_StepRates[m_StepIndex];
 			if (g_bShowInches)
 			{
@@ -272,7 +272,7 @@ void JogScreen::Update( unsigned long time )
 			}
 			else if (TestBit(g_ButtonHold, BUTTON_GOTO0))
 			{
-				Serial.print(g_StrJOG);
+				Serial.print(g_StrJOG2);
 				Sprintf(g_TextBuf, "0%c%c", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis]);
 				Serial.println(g_TextBuf);
 			}
@@ -301,7 +301,7 @@ void JogScreen::Update( unsigned long time )
 					{
 						Sprintf(g_TextBuf, "WM%c%d*%d.%02d", g_AxisName[pState->m_Axis], wheel, step/100, step%100);
 					}
-					Serial.print(g_StrJOG);
+					Serial.print(g_StrJOG2);
 					Serial.println(g_TextBuf);
 				}
 			}
@@ -320,7 +320,7 @@ void JogScreen::Update( unsigned long time )
 		{
 			pState->m_OldJoyX = x;
 			pState->m_OldJoyY = y;
-			Serial.print(g_StrJOG);
+			Serial.print(g_StrJOG2);
 			Sprintf(g_TextBuf, "JXY%d,%d", x, y);
 			Serial.println(g_TextBuf);
 		}

@@ -289,10 +289,10 @@ function HandleJobComplete(data)
 	{
 		// this is a real job
 		ShowPendantDialog({
-			title: "====== Done ======",
+			title: "Done",
 			text: [
-				"  Job completed",
-				"   successfully"],
+				"Job completed",
+				"successfully"],
 			rButton: ["OK"],
 		});
 		return;
@@ -330,6 +330,7 @@ var g_DialogRCallback;
 // dialog.text - an array of up to 3 lines
 //    if the line starts with CHAR_UNCHECKED, it shows a checkbox
 //    lines can be up to 18 characters
+//    lines starting with a checkbox or ^ are left-aligned
 // dialog.lButton [string, callback] -  optional left button
 //    if the button starts with CHAR_HOLD, it requires long hold
 //    if the button starts with "!", the dialog waits for half second before it is dismissed (CHAR_HOLD is before ! if both are used)
@@ -406,12 +407,21 @@ function PushSettings(pushRomSettings)
 	for (var idx = 1; idx <= 7; idx++)
 	{
 		var macro = g_PendantSettings["macro" + idx];
-		var hold = macro.hold;
-		if (hold)
+		str += "|";
+		if (macro.name != "")
 		{
-			flags |= 1 << (idx-1);
+			var hold = macro.hold;
+			if (hold)
+			{
+				flags |= 1 << (idx-1);
+			}
+			var label = macro.label.replaceAll('|', '_');
+			if (label == "")
+			{
+				label = "MACRO " + idx;
+			}
+			str += label;
 		}
-		str += "|" + macro.label.replaceAll('|', '_');
 	}
 	WritePort("MACROS:" + flags + str + "|");
 
@@ -876,7 +886,7 @@ function HandleJobMenu()
 	{
 		text = g_PendantSettings.jobChecklist.split('|').map(x => CHAR_UNCHECKED + " " + x.substring(0, 16)).slice(0, 3);
 		ShowPendantDialog({
-			title: " = Job Checklist =",
+			title: "Job Checklist",
 			text: text,
 			lButton: ["!@", function () { WritePort("JOBSCREEN"); }],
 			rButton: ["Back"],
@@ -940,10 +950,10 @@ function SetupProbeMode(probeType)
 		}
 	}
 	ShowPendantDialog({
-		title: "===== Probe =======",
+		title: "Probe",
 		text: [
 			"The probe setings",
-			"   are invalid."],
+			"are invalid."],
 		rButton: ["OK"],
 	});
 }
@@ -979,12 +989,12 @@ function HandleProbeJobComplete(probeType, probeZ)
 	var text = [];
 	if (showZ)
 	{
-		text.push(" Z = " + probeZ + " mm");
+		text.push("^ Z = " + probeZ + " mm");
 	}
-	text.push(" Disconnect probe");
+	text.push("Disconnect probe");
 
 	ShowPendantDialog({
-		title: "= Probe Complete =",
+		title: "Probe Complete",
 		text: text,
 		rButton: ["OK", function()
 		{
@@ -1016,10 +1026,10 @@ function HandleProbeCommand(command)
 			if (probeType != 0 && !laststatus.machine.modals.homedRecently)
 			{
 				ShowPendantDialog({
-					title: "=== Tool Probe ===",
+					title: "Tool Probe",
 					text: [
-						" Machine has to",
-						" be homed before",
+						"Machine has to",
+						"be homed before",
 						"using tool probe."],
 						lButton: ["!IGNORE", function() { WritePort("PROBESCREEN:" + probeType); SetupProbeMode(probeType); }],
 						rButton: ["OK"],
@@ -1164,9 +1174,9 @@ function HandleProbeCommand(command)
 				if (probe.state == 0)
 				{
 					ShowPendantDialog({
-						title: "== Probe Failed ==",
+						title: "Probe Failed",
 						text: [
-							" Disconnect probe"],
+							"Disconnect probe"],
 							rButton: ["OK"],
 						});
 					socket.off('prbResult');
@@ -1474,14 +1484,14 @@ function PendantComHandler(data)
 	if (data == "HOME")
 	{
 		if (COM_LOG_LEVEL >= 1) { console.log("#HOME#"); }
-		if (laststatus.machine.modals.homedRecently)
+//		if (laststatus.machine.modals.homedRecently)
 		{
 			ShowPendantDialog({
-				title: "==== Home XYZ ====",
+				title: "Home XYZ",
 				text: [
 					"Machine is already",
-					"      homed.",
-					"   Home anyway?"],
+					"homed.",
+					"Home anyway?"],
 				lButton: ["No"],
 				rButton: ["Yes", home],
 			});

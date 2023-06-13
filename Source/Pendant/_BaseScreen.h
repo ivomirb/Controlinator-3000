@@ -1,5 +1,7 @@
 #pragma once
 
+#define DRAW_SCREEN_TITLE 1
+
 // Base class for all screens
 class BaseScreen
 {
@@ -39,7 +41,16 @@ protected:
 	static void PrintZ( char *buf );
 
 	// Draws the status line at the top of the screen
-	static void DrawMachineStatus( void );
+#if DRAW_SCREEN_TITLE
+#ifdef EMULATOR
+	static void DrawMachineStatus( const char *title, uint8_t titleLen );
+#else
+	static void DrawMachineStatus( const __FlashStringHelper *title, uint8_t titleLen );
+#endif
+#else
+	#define DrawMachineStatus(...) DrawMachineStatusInt()
+	static void DrawMachineStatusInt( void );
+#endif
 
 	// Draws a blank button symbol for unused buttons according to the mask
 	static void DrawUnusedButtons( uint16_t mask );
@@ -173,13 +184,41 @@ void BaseScreen::PrintZ( char *buf )
 	PrintCoord(buf, g_bWorkSpace ? g_WorkZ : (g_WorkZ + g_OffsetZ));
 }
 
-void BaseScreen::DrawMachineStatus( void )
+#if DRAW_SCREEN_TITLE
+#ifdef EMULATOR
+void BaseScreen::DrawMachineStatus( const char *title, uint8_t titleLen )
 {
-	int8_t len = GetStatusNameLen(g_MachineStatus);
-	uint8_t x = (16 - len) / 2;
-	DrawText(x, 0, ROMSTR("["));
-	DrawText(x + 1, 0, GetStatusName(g_MachineStatus));
-	DrawText(x + len + 1, 0, ROMSTR("]"));
+	Assert((title ? Strlen(title) : 0) == titleLen);
+#else
+void BaseScreen::DrawMachineStatus( const __FlashStringHelper *title, uint8_t titleLen )
+{
+#endif
+#else
+void BaseScreen::DrawMachineStatusInt( void )
+{
+	const char *title = nullptr;
+	const uint8_t titleLen = 0;
+#endif
+	uint8_t minX = 0, maxX = 128;
+#if DRAW_SCREEN_TITLE
+	if (titleLen > 0)
+	{
+		uint8_t x = (50 - (titleLen * 7)) / 2;
+		DrawBox(x - 2, 0, titleLen * 7 + 4, 10);
+		SetColorIndex(0);
+		DrawTextXY(x, 1, title);
+		minX = 50;
+		SetColorIndex(1);
+	}
+#endif
+	{
+		int8_t len = GetStatusNameLen(g_MachineStatus);
+		uint8_t x = minX + 5;//(maxX + minX - (len + 2) * 7) / 2;
+		DrawTextXY(x, 0, ROMSTR("["));
+		DrawTextXY(x + 7, 0, GetStatusName(g_MachineStatus));
+		DrawTextXY(x + len * 7 + 7, 0, ROMSTR("]"));
+		DrawBox(0, 10, 128, 1);
+	}
 }
 
 void BaseScreen::DrawUnusedButtons( uint16_t mask )

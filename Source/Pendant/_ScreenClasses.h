@@ -1,8 +1,8 @@
 #pragma once
 
-#define USE_SHARED_STATE
+#define USE_SHARED_STATE 1 // 0 - each screen stores its own state. 1 - some large screens share memory (potentially slower code?)
 
-#ifndef USE_SHARED_STATE
+#if !USE_SHARED_STATE
 #define GetActiveState() (Assert(IsActive()), this)
 #endif
 
@@ -106,7 +106,9 @@ public:
 private:
 	static const int MAX_BUTTON_SIZE = 14;
 
-#ifdef USE_SHARED_STATE
+	void DrawLine( uint8_t row, bool bCenter );
+
+#if USE_SHARED_STATE
 	struct ActiveState
 	{
 #endif
@@ -114,12 +116,13 @@ private:
 		uint16_t m_Id;
 		char m_Lines[4][19];
 		char m_Buttons[2][MAX_BUTTON_SIZE + 1];
-		uint8_t m_CheckFlags : 3;
+		uint8_t m_CheckFlags : 3; // lines with unchecked checkboxes
+		uint8_t m_AlignFlags : 3; // lines aligned to the left
 		uint8_t m_ButtonHoldFlags : 2;
 		uint8_t m_ButtonWaitFlags : 2;
 		unsigned long m_ButtonDismissTimer;
 
-#ifdef USE_SHARED_STATE
+#if USE_SHARED_STATE
 	};
 
 	friend union ScreenTimeshare;
@@ -162,7 +165,7 @@ public:
 private:
 	static const uint16_t JOG_INACTIVITY_TIMER = 10000; // 10 seconds of inactivity will exit the jog screen
 
-#ifdef USE_SHARED_STATE
+#if USE_SHARED_STATE
 	struct ActiveState
 	{
 #endif
@@ -179,7 +182,7 @@ private:
 		int8_t m_OldJoyX;
 		int8_t m_OldJoyY;
 
-#ifdef USE_SHARED_STATE
+#if USE_SHARED_STATE
 	};
 
 	friend union ScreenTimeshare;
@@ -450,7 +453,7 @@ public:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifdef USE_SHARED_STATE
+#if USE_SHARED_STATE
 union ScreenTimeshare
 {
 	DialogScreen::ActiveState dialog;

@@ -40,7 +40,7 @@ void RunScreen::Draw( void )
 
 #if PARTIAL_SCREEN_UPDATE
 	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
-	const bool bDrawAll = pDrawState->bShowInches != g_bShowInches || pDrawState->screenState != screenState;
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->bShowInches != g_bShowInches || pDrawState->screenState != screenState;
 	pDrawState->bShowInches = g_bShowInches;
 	pDrawState->screenState = screenState;
 	if (bDrawAll && !s_DrawState.bDrawAll)
@@ -48,11 +48,11 @@ void RunScreen::Draw( void )
 		ClearBuffer();
 	}
 
-	const bool bDrawX = bDrawAll || s_DrawState.bDrawAll || pDrawState->x != g_WorkX;
-	const bool bDrawY = bDrawAll || s_DrawState.bDrawAll || pDrawState->y != g_WorkY;
-	const bool bDrawZ = bDrawAll || s_DrawState.bDrawAll || pDrawState->z != g_WorkZ;
-	const bool bDrawF = bDrawAll || s_DrawState.bDrawAll || pDrawState->f != g_FeedOverride || pDrawState->_override != m_Override;
-	const bool bDrawS = bDrawAll || s_DrawState.bDrawAll || pDrawState->s != g_SpeedOverride || pDrawState->_override != m_Override;
+	const bool bDrawX = bDrawAll || pDrawState->x != g_WorkX;
+	const bool bDrawY = bDrawAll || pDrawState->y != g_WorkY;
+	const bool bDrawZ = bDrawAll || pDrawState->z != g_WorkZ;
+	const bool bDrawF = bDrawAll || pDrawState->f != g_FeedOverride || pDrawState->_override != m_Override;
+	const bool bDrawS = bDrawAll || pDrawState->s != g_SpeedOverride || pDrawState->_override != m_Override;
 	pDrawState->x = g_WorkX;
 	pDrawState->y = g_WorkY;
 	pDrawState->z = g_WorkZ;
@@ -63,46 +63,49 @@ void RunScreen::Draw( void )
 	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawF = true, bDrawS = true, bDrawAll = true;
 #endif
 
-	DrawMachineStatus();
-	uint8_t unusedButtons = 0x70;
-	switch (screenState)
+	if (bDrawAll)
 	{
-		case STATE_IDLE: // job hasn't started, ready to run
-			DrawButton(BUTTON_RUN, ROMSTR("Run"), 3, true);
-			DrawButton(BUTTON_BACK, g_StrBack, 4, false);
-			unusedButtons &= ~((1<<BUTTON_RUN)|(1<<BUTTON_BACK));
-			break;
+		DrawMachineStatus(ROMSTR("JOB"), 3);
+		uint8_t unusedButtons = 0x70;
+		switch (screenState)
+		{
+			case STATE_IDLE: // job hasn't started, ready to run
+				DrawButton(BUTTON_RUN, ROMSTR("Run"), 3, true);
+				DrawButton(BUTTON_BACK, g_StrBack, 4, false);
+				unusedButtons &= ~((1<<BUTTON_RUN)|(1<<BUTTON_BACK));
+				break;
 
-		case STATE_RUNNING: // job is currently running
-			DrawButton(BUTTON_PAUSE, ROMSTR("Pause"), 5, false);
-			DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
-			unusedButtons &= ~((1<<BUTTON_PAUSE)|(1<<BUTTON_STOP));
-			break;
+			case STATE_RUNNING: // job is currently running
+				DrawButton(BUTTON_PAUSE, ROMSTR("Pause"), 5, false);
+				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
+				unusedButtons &= ~((1<<BUTTON_PAUSE)|(1<<BUTTON_STOP));
+				break;
 
-		case STATE_PAUSED: // job is paused, but not clear to resume
-			if (g_RealSpeed > 0)
-			{
-				DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
-				unusedButtons &= ~(1<<BUTTON_RPM0);
-			}
-			// fallthrough
-		case STATE_PAUSING: // stopping (still show STOP to avoid flicker)
-			DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
-			unusedButtons &= ~(1<<BUTTON_STOP);
-			break;
+			case STATE_PAUSED: // job is paused, but not clear to resume
+				if (g_RealSpeed > 0)
+				{
+					DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
+					unusedButtons &= ~(1<<BUTTON_RPM0);
+				}
+				// fallthrough
+			case STATE_PAUSING: // stopping (still show STOP to avoid flicker)
+				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
+				unusedButtons &= ~(1<<BUTTON_STOP);
+				break;
 
-		case STATE_PAUSED_READY: // job is ready to resome
-			DrawButton(BUTTON_RESUME, ROMSTR("Resume"), 6, true);
-			DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
-			unusedButtons &= ~((1<<BUTTON_RESUME)|(1<<BUTTON_STOP));
-			if (g_RealSpeed > 0)
-			{
-				DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
-				unusedButtons &= ~(1<<BUTTON_RPM0);
-			}
-			break;
+			case STATE_PAUSED_READY: // job is ready to resome
+				DrawButton(BUTTON_RESUME, ROMSTR("Resume"), 6, true);
+				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
+				unusedButtons &= ~((1<<BUTTON_RESUME)|(1<<BUTTON_STOP));
+				if (g_RealSpeed > 0)
+				{
+					DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
+					unusedButtons &= ~(1<<BUTTON_RPM0);
+				}
+				break;
+		}
+		DrawUnusedButtons(unusedButtons);
 	}
-	DrawUnusedButtons(unusedButtons);
 
 	if (bDrawX)
 	{

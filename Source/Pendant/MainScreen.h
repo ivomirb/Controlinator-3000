@@ -4,7 +4,7 @@ void MainScreen::Draw( void )
 {
 #if PARTIAL_SCREEN_UPDATE
 	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
-	const bool bDrawAll = pDrawState->bWorkSpace != g_bWorkSpace || pDrawState->bShowInches != g_bShowInches ||
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->bWorkSpace != g_bWorkSpace || pDrawState->bShowInches != g_bShowInches ||
 		pDrawState->bCanShowStop != g_bCanShowStop || pDrawState->bJobRunning != g_bJobRunning;
 	pDrawState->bWorkSpace = g_bWorkSpace;
 	pDrawState->bShowInches = g_bShowInches;
@@ -15,9 +15,9 @@ void MainScreen::Draw( void )
 		ClearBuffer();
 	}
 
-	const bool bDrawX = bDrawAll || s_DrawState.bDrawAll || pDrawState->wx != g_WorkX || pDrawState->ox != g_OffsetX;
-	const bool bDrawY = bDrawAll || s_DrawState.bDrawAll || pDrawState->wy != g_WorkY || pDrawState->oy != g_OffsetY;
-	const bool bDrawZ = bDrawAll || s_DrawState.bDrawAll || pDrawState->wz != g_WorkZ || pDrawState->oz != g_OffsetZ;
+	const bool bDrawX = bDrawAll || pDrawState->wx != g_WorkX || pDrawState->ox != g_OffsetX;
+	const bool bDrawY = bDrawAll || pDrawState->wy != g_WorkY || pDrawState->oy != g_OffsetY;
+	const bool bDrawZ = bDrawAll || pDrawState->wz != g_WorkZ || pDrawState->oz != g_OffsetZ;
 	pDrawState->wx = g_WorkX;
 	pDrawState->ox = g_OffsetX;
 	pDrawState->wy = g_WorkY;
@@ -28,9 +28,9 @@ void MainScreen::Draw( void )
 	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawAll = true;
 #endif
 
-	if (s_DrawState.bDrawAll || bDrawAll)
+	if (bDrawAll)
 	{
-		DrawMachineStatus();
+		DrawMachineStatus(ROMSTR("MAIN"), 4);
 		DrawText(0, 1, g_StrX);
 		DrawText(0, 2, g_StrY);
 		DrawText(0, 3, g_StrZ);

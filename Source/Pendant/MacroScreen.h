@@ -3,7 +3,7 @@ void MacroScreen::Draw( void )
 #if PARTIAL_SCREEN_UPDATE
 	if (!s_DrawState.bDrawAll) return;
 #endif
-	DrawMachineStatus();
+	DrawMachineStatus(ROMSTR("MACROS"), 6);
 	DrawUnusedButtons(m_UnusedMacros);
 	for (uint8_t i = 0; i < 7; i++)
 	{

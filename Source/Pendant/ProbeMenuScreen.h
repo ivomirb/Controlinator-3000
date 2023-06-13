@@ -11,7 +11,7 @@ void ProbeMenuScreen::Draw( void )
 	}
 #endif
 
-	DrawMachineStatus();
+	DrawMachineStatus(g_StrPROBE, 5);
 	uint8_t unusedButtons = 0x78;
 	DrawButton(BUTTON_PROBE_Z, ROMSTR("Probe Z"), 7, false);
 	DrawButton(BUTTON_PROBE_REF_TOOL, ROMSTR("Probe Ref Tool"), 14, false);
@@ -42,7 +42,7 @@ void ProbeMenuScreen::Update( unsigned long time )
 		}
 		else
 		{
-			Serial.print(g_StrPROBE);
+			Serial.print(g_StrPROBE2);
 			Serial.print(g_StrENTER);
 			Serial.println(ZProbeScreen::PROBE_REF_TOOL);
 		}
@@ -55,7 +55,7 @@ void ProbeMenuScreen::Update( unsigned long time )
 		}
 		else
 		{
-			Serial.print(g_StrPROBE);
+			Serial.print(g_StrPROBE2);
 			Serial.print(g_StrENTER);
 			Serial.println(ZProbeScreen::PROBE_NEW_TOOL);
 		}
