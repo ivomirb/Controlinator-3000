@@ -1,6 +1,6 @@
 #pragma once
 
-#define DRAW_SCREEN_TITLE 1
+#define DRAW_SCREEN_TITLE 1 // 1 - draw title, 0 - no title (saves memory)
 
 // Base class for all screens
 class BaseScreen
@@ -199,7 +199,7 @@ void BaseScreen::DrawMachineStatusInt( void )
 	const char *title = nullptr;
 	const uint8_t titleLen = 0;
 #endif
-	uint8_t minX = 0, maxX = 128;
+
 #if DRAW_SCREEN_TITLE
 	if (titleLen > 0)
 	{
@@ -207,13 +207,16 @@ void BaseScreen::DrawMachineStatusInt( void )
 		DrawBox(x - 2, 0, titleLen * 7 + 4, 10);
 		SetColorIndex(0);
 		DrawTextXY(x, 1, title);
-		minX = 50;
 		SetColorIndex(1);
 	}
 #endif
 	{
 		int8_t len = GetStatusNameLen(g_MachineStatus);
-		uint8_t x = minX + 5;//(maxX + minX - (len + 2) * 7) / 2;
+#if DRAW_SCREEN_TITLE
+		uint8_t x = 55;
+#else
+		uint8_t x = 56 - len * 7 / 2;
+#endif
 		DrawTextXY(x, 0, ROMSTR("["));
 		DrawTextXY(x + 7, 0, GetStatusName(g_MachineStatus));
 		DrawTextXY(x + len * 7 + 7, 0, ROMSTR("]"));
