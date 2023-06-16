@@ -61,7 +61,7 @@ void AlarmScreen::Update( unsigned long time )
 
 	if (m_DismissTime && time - m_DismissTime > DISMISS_TIMER)
 	{
-		// after 1 second, either close the screen or reenable the button
+		// after 1.3 seconds, either close the screen or reenable the button
 		m_bDismissed = false;
 		m_DismissTime = 0;
 		if (g_MachineStatus != STATUS_ALARM)
