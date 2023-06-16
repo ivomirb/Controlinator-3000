@@ -28,6 +28,9 @@ const WHEEL_JOG_STOP_TIME = 100; // the jog will stop 100ms after the last click
 const PENDANT_VERSION = "1.0";
 const PENDANT_BAUD_RATE = 38400;
 
+// Must match Input.h
+const JOYSTICK_STEPS = 10;
+
 const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - everything+ACK
 
 const {
@@ -176,7 +179,7 @@ function GenerateStatusString(s)
 	else
 	{
 		status = g_StatusMap[s.comms.runStatus];
-		if (status == g_StatusMap.Running && (g_JogXYLocation != undefined || g_JogQueue != undefined || g_ProbeJog != undefined))
+		if (status == g_StatusMap.Running && (g_JogXYLocation != undefined || g_JogWQueue != undefined || g_ProbeJog != undefined))
 		{
 			status = g_StatusMap.Jog;
 		}
@@ -246,11 +249,12 @@ function HandleStatus(status)
 	{
 		// update wheel jog location on every idle
 		if (g_SafeStopPending == 1) { g_SafeStopPending = 0; }
+		g_JogCancelPendingTime = undefined;
 	}
 	else
 	{
 		g_LastBusyTime = Date.now();
-		if (g_SafeStopPending!= 0 && status.comms.runStatus == "Hold:0")
+		if (g_SafeStopPending != 0 && status.comms.runStatus == "Hold:0")
 		{
 			socket.emit('stop', {stop: true, jog: false, abort: false});
 			g_SafeStopPending = 0;
@@ -264,10 +268,10 @@ function HandleStatus(status)
 // Returns true if the machine was idle for at least 500ms, and the last status upadte was less than 300ms ago
 function IsStableIdle()
 {
-	if (g_LastBusyTime != undefined && g_LastUpdateTime != undefined)
+	if (g_LastUpdateTime != undefined)
 	{
 		var t = Date.now();
-		return t - g_LastBusyTime >= 500 && t - g_LastUpdateTime <= 300;
+		return ((g_LastBusyTime == undefined) || (t - g_LastBusyTime >= 500)) && t - g_LastUpdateTime <= 300;
 	}
 	return false;
 }
@@ -275,13 +279,25 @@ function IsStableIdle()
 // Handles the job completion event
 function HandleJobComplete(data)
 {
-	if (COM_LOG_LEVEL >= 1 && (data.jobStartTime || data.jobCompletedMsg.length != ""))
+	if (COM_LOG_LEVEL >= 1 && (data.jobStartTime || data.jobCompletedMsg.length > 0))
 	{
 		console.log("JOB COMPLETED", data);
 	}
 
 	if (g_PendantPort == undefined)
 	{
+		return;
+	}
+
+	// if a job completed within 300ms of canceling the jog, cancel again. there is a race condition with canceling not
+	// working if there is a command currently being processed. afterwards Grbl sends 'ok', which triggers a job completion event
+	if (data.failed && g_JogCancelPendingTime != undefined)
+	{
+		if (Date.now() - g_JogCancelPendingTime < 300)
+		{
+			socket.emit('stop', {stop: false, jog: true, abort: false});
+		}
+		g_JogCancelPendingTime = undefined;
 		return;
 	}
 
@@ -523,37 +539,39 @@ function ClampSafeAbsoluteMove(value, delta, axis, bInches)
 var g_JogAxis; // 'X', 'Y' or 'Z'
 var g_JogStep;
 var g_bJogInches;
-var g_JogLocation; // the last submitted target for g_JogAxis
-var g_JogQueue; // number of queued steps along g_JogAxis
-var g_JogTimer;
+var g_JogWLocation; // the last submitted target for g_JogAxis
+var g_JogWQueue; // number of queued steps along g_JogAxis
+var g_JogWTimer;
 var g_LastWheelMoveTime;
 
 // Jogging with joystick
 var g_JogXYLocation; // last known joystick jog location in MCS. always in mm
 var g_JogXYTimer;
 var g_JogJoystick = {X: 0, Y: 0}; // last received joystick position
+var g_JogCancelPendingTime = undefined; // to cancel jog on next job complete
 
 // Called periodically to process the queue of wheel jog requests
 function ProcessJogQueue()
 {
-	if (g_JogQueue == 0 && IsStableIdle())
+	if (g_JogWQueue == 0 && IsStableIdle())
 	{
-		clearInterval(g_JogTimer);
-		g_JogTimer = undefined;
+		clearInterval(g_JogWTimer);
+		g_JogWTimer = undefined;
 		g_JogAxis = undefined;
 		g_bJogInches = undefined;
-		g_JogLocation = undefined;
-		g_JogQueue = undefined;
+		g_JogWLocation = undefined;
+		g_JogWQueue = undefined;
 		return;
 	}
 
 	if (Date.now() - g_LastWheelMoveTime > WHEEL_JOG_STOP_TIME)
 	{
 		// wheel stopped, clear the queue
-		g_JogQueue = 0;
+		g_JogWQueue = 0;
 		return;
 	}
 
+	var step = Math.abs(g_JogStep) * (g_bJogInches ? 25.4 : 1); // jog step in mm
 	var feedT;
 	switch (g_JogAxis)
 	{
@@ -561,17 +579,17 @@ function ProcessJogQueue()
 		case "Y": feedT = grblParams["$111"]; break;
 		case "Z": feedT = grblParams["$112"]; break;
 	}
+	var feed = Math.min(feedT, step * 6000); // limit feed to 100 steps per second
 
 	var maxDist = feedT * WHEEL_JOG_AHEAD_TIME / 60000; // travel distance to keep in the queue
 
 	var axisL = g_JogAxis.toLowerCase();
 	var current = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL]; // current absolute position
-	var dist = Math.abs(g_JogLocation - current);
+	var dist = Math.abs(g_JogWLocation - current);
 
-	// determine how much of the queue can be processed in WHEEL_JOG_AHEAD_TIME
+	// determine how many steps from the queue can be processed in WHEEL_JOG_AHEAD_TIME
 	var count = 0;
-	var step = Math.abs(g_JogStep) * (g_bJogInches ? 25.4 : 1); // jog step in mm
-	for (; count < g_JogQueue; count++)
+	for (; count < g_JogWQueue; count++)
 	{
 		if (dist > 0.01 && dist + step > maxDist)
 		{
@@ -583,7 +601,7 @@ function ProcessJogQueue()
 	if (count > 0)
 	{
 		// determine the target location
-		var absValue = g_JogLocation;
+		var absValue = g_JogWLocation;
 		if (g_bJogInches) { absValue /= 25.4; }
 
 		var delta = 0;
@@ -598,15 +616,15 @@ function ProcessJogQueue()
 				break;
 			}
 		}
-		g_JogQueue -= count;
+		g_JogWQueue -= count;
 
 		if (delta != 0)
 		{
 			absValue += delta;
 			// absolute move in machine space, inches or mm
-			var gcode = "$J=G90 G53 " + (g_bJogInches ? "G20 " : "G21 ") + g_JogAxis + absValue.toFixed(3) + " F" + feedT;
+			var gcode = "$J=G90 G53 " + (g_bJogInches ? "G20 " : "G21 ") + g_JogAxis + absValue.toFixed(3) + " F" + feed.toFixed(0);
 			sendGcode(gcode);
-			g_JogLocation = g_bJogInches ? absValue * 25.4 : absValue;
+			g_JogWLocation = g_bJogInches ? absValue * 25.4 : absValue;
 		}
 	}
 }
@@ -649,7 +667,7 @@ function QueueJogXY(joyX, joyY, dt)
 
 	// normalize joyX and joyY from 20x20 square to the unit circle
 	var slope = Math.abs(joyX) < Math.abs(joyY) ? joyX/joyY : joyY/joyX;
-	var maxXY = Math.sqrt(slope*slope + 1) * 10;
+	var maxXY = Math.sqrt(slope*slope + 1) * JOYSTICK_STEPS;
 
 	// requested move in mm
 	var newX = ClampSafeAbsoluteMove(g_JogXYLocation.X, joyX * feedXY * dt / maxXY, 'X', false);
@@ -796,26 +814,29 @@ function HandleJogCommand(command)
 		if (axis != g_JogAxis || inches != g_bJogInches || step != g_JogStep)
 		{
 			// axis or unit is switched, clear everything
-			g_JogQueue = 0;
+			g_JogWQueue = 0;
 			g_JogStep = step;
 			g_JogAxis = axis;
 			g_bJogInches = inches;
-			g_JogLocation = undefined;
+			g_JogWLocation = undefined;
 		}
-		g_JogQueue += count;
+		g_JogWQueue += count;
 
 		g_LastWheelMoveTime = Date.now();
 
-		if (g_JogLocation == undefined)
+		if (g_JogWLocation == undefined)
 		{
-			g_JogLocation = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL];
+			g_JogWLocation = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL];
 		}
 
-		if (g_JogTimer == undefined)
+		if (g_JogWTimer == undefined)
 		{
-			g_LastBusyTime = Date.now(); // force state as busy
-			ProcessJogQueue();
-			g_JogTimer = setInterval(ProcessJogQueue, 100);
+			if (IsStableIdle())
+			{
+				g_LastBusyTime = Date.now(); // force state as busy
+				ProcessJogQueue();
+			}
+			g_JogWTimer = setInterval(ProcessJogQueue, 100);
 		}
 
 		return;
@@ -829,9 +850,13 @@ function HandleJogCommand(command)
 		if (xy[0] == 0 && xy[1] == 0)
 		{
 			// joystick is released, stop immediately
-			if (g_JogXYLocation != undefined)
+			if (g_JogXYLocation != undefined && !IsStableIdle())
 			{
 				socket.emit('stop', {stop: false, jog: true, abort: false});
+				if (laststatus.comms.runStatus != "Idle")
+				{
+					g_JogCancelPendingTime = Date.now();
+				}
 			}
 			CancelJogXY();
 			return;
@@ -839,7 +864,7 @@ function HandleJogCommand(command)
 
 		if (g_JogXYTimer == undefined)
 		{
-			if (laststatus.comms.runStatus == "Idle")
+			if (IsStableIdle() && (xy[0] * xy[0] + xy[1] * xy[1]) * 4 > JOYSTICK_STEPS * JOYSTICK_STEPS )
 			{
 				BeginJogXY();
 			}
@@ -1498,7 +1523,7 @@ function PendantComHandler(data)
 	if (data == "HOME")
 	{
 		if (COM_LOG_LEVEL >= 1) { console.log("#HOME#"); }
-//		if (laststatus.machine.modals.homedRecently)
+		if (laststatus.machine.modals.homedRecently)
 		{
 			ShowPendantDialog({
 				title: "Home XYZ",
@@ -2641,7 +2666,6 @@ function ReadSettingsFromDialog(updateRomSettings)
 	// save to persistent storage and push to the pendant
 	localStorage.setItem("PendantSettings", JSON.stringify(g_PendantSettings));
 	PushSettings(updateRomSettings);
-	console.log(g_PendantSettings);
 }
 
 // Updates the settings controls based on the specified collection

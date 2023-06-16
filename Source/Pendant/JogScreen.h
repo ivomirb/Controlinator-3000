@@ -1,4 +1,5 @@
 const int WHEEL_UPDATE_TIME = 100; // don't send wheel updates more than once every 100ms
+const int JOYSTICK_UPDATE_TIME = 100; // don't send joystick updates more than once every 100ms
 
 const char g_AxisName[5] = {' ', 'X', 'Y', ' ', 'Z'};
 
@@ -318,11 +319,21 @@ void JogScreen::Update( unsigned long time )
 		}
 		if (pState->m_OldJoyX != x || pState->m_OldJoyY != y)
 		{
-			pState->m_OldJoyX = x;
-			pState->m_OldJoyY = y;
-			Serial.print(g_StrJOG2);
-			Sprintf(g_TextBuf, "JXY%d,%d", x, y);
-			Serial.println(g_TextBuf);
+			int16_t d1 = pState->m_OldJoyX * pState->m_OldJoyX + pState->m_OldJoyY * pState->m_OldJoyY;
+			int16_t d2 = x * x + y * y;
+			if ((x == 0 && y == 0) || d2 > d1 || time - pState->m_LastJoystickTime >= JOYSTICK_UPDATE_TIME)
+			{
+				pState->m_OldJoyX = x;
+				pState->m_OldJoyY = y;
+				pState->m_LastJoystickTime = time;
+				Serial.print(g_StrJOG2);
+				Sprintf(g_TextBuf, "JXY%d,%d", x, y);
+				Serial.println(g_TextBuf);
+			}
+		}
+		else if (x != 0 || y != 0)
+		{
+			pState->m_LastJoystickTime = time; // reset timer if the joystick hasn't moved
 		}
 	}
 
@@ -340,6 +351,7 @@ void JogScreen::Activate( unsigned long time )
 	pState->m_LastInputTime = time;
 	pState->m_StepHoldTime = 0;
 	pState->m_LastWheelTime = time;
+	pState->m_LastJoystickTime = time;
 	pState->m_bShowStop = false;
 	pState->m_bShowActions = true;
 	pState->m_bShowAlign = false;

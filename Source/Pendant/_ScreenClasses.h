@@ -22,7 +22,7 @@ private:
 		BUTTON_DISMISS = 7,
 	};
 
-	static const int DISMISS_TIMER = 1000; // wait 1 second after the alarm is cleared to close the dialog
+	static const int DISMISS_TIMER = 1300; // wait 1.3 seconds after the alarm is cleared to close the dialog
 
 	unsigned long m_DismissTime; // the time of the first non-alarm frame after clicking the button
 	uint8_t m_bDismissed : 1; // the button was clicked
@@ -173,6 +173,7 @@ private:
 		unsigned long m_LastInputTime; // time of last user input
 		unsigned long m_StepHoldTime; // duration of holding the Step button
 		unsigned long m_LastWheelTime; // time of the last sent wheel message
+		unsigned long m_LastJoystickTime; // time of last sent joystick message
 		uint8_t m_Axis : 4; // current axis - one bit for X, Y and Z
 		uint8_t m_bShowStop : 1; // show the stop button
 		uint8_t m_bShowActions : 1; // show the actions to do during idle
