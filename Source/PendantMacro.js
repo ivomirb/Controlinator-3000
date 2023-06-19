@@ -265,7 +265,7 @@ function HandleStatus(status)
 	PushStatus(status);
 }
 
-// Returns true if the machine was idle for at least 500ms, and the last status upadte was less than 300ms ago
+// Returns true if the machine was idle for at least 500ms, and the last status update was no more than 300ms ago
 function IsStableIdle()
 {
 	if (g_LastUpdateTime != undefined)
