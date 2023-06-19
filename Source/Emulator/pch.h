@@ -10,6 +10,6 @@
 // add headers that you want to pre-compile here
 #include "framework.h"
 
-#define Assert(condition) { if (!(condition)) DebugBreak(); }
+#define Assert(condition) ((condition) ? 0 : (DebugBreak(), 0))
 
 #endif //PCH_H

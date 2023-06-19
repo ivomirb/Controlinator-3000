@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef USE_SHARED_STATE
+#if USE_SHARED_STATE
 DialogScreen::ActiveState *DialogScreen::GetActiveState( void )
 {
 	Assert(IsActive());
@@ -8,22 +8,41 @@ DialogScreen::ActiveState *DialogScreen::GetActiveState( void )
 }
 #endif
 
+void DialogScreen::DrawLine( uint8_t row, bool bCenter )
+{
+	const char *line = GetActiveState()->m_Lines[row];
+	DrawTextXY(bCenter ? (128 - Strlen(line) * 7) / 2 : 1, g_Rows[row], line);
+}
+
 void DialogScreen::Draw( void )
 {
 	auto *pState = GetActiveState();
 
+#if PARTIAL_SCREEN_UPDATE
+	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->id != pState->m_Id || pDrawState->checkFlags != pState->m_CheckFlags;
+	pDrawState->id = pState->m_Id;
+	pDrawState->checkFlags = pState->m_CheckFlags;
+	if (!bDrawAll) return;
+	if (!s_DrawState.bDrawAll)
+	{
+		ClearBuffer();
+	}
+#endif
+
 	if (pState->m_Lines[0][0])
 	{
-		DrawText(0, 0, pState->m_Lines[0]);
+		DrawBox(0, 10, 128, 1);
+		DrawLine(0, true);
 	}
 	else
 	{
-		DrawMachineStatus();
+		DrawMachineStatus(nullptr, 0);
 	}
 
-	DrawText(0, 1, pState->m_Lines[1]);
-	DrawText(0, 2, pState->m_Lines[2]);
-	DrawText(0, 3, pState->m_Lines[3]);
+	DrawLine(1, (pState->m_AlignFlags&1) == 0);
+	DrawLine(2, (pState->m_AlignFlags&2) == 0);
+	DrawLine(3, (pState->m_AlignFlags&4) == 0);
 
 	if (pState->m_CheckFlags == 0 && pState->m_Buttons[0][0] != '@')
 	{
@@ -37,6 +56,12 @@ void DialogScreen::Update( unsigned long time )
 {
 	auto *pState = GetActiveState();
 
+	if (pState->m_ButtonDismissTimer != 0 && time - pState->m_ButtonDismissTimer > 500)
+	{
+		CloseScreen();
+		return;
+	}
+
 	int8_t button = GetCurrentButton();
 	if (button >= 0 && button < 3 && pState->m_Lines[button + 1][0] == CHAR_UNCHECKED)
 	{
@@ -46,7 +71,14 @@ void DialogScreen::Update( unsigned long time )
 	if (pState->m_Buttons[0][0] == '@' && pState->m_CheckFlags == 0 && g_ButtonState == 0)
 	{
 		SendResponse(1);
-		CloseScreen();
+		if (TestBit(pState->m_ButtonWaitFlags, 0))
+		{
+			pState->m_ButtonDismissTimer = time;
+		}
+		else
+		{
+			CloseScreen();
+		}
 		return;
 	}
 
@@ -65,7 +97,14 @@ void DialogScreen::Update( unsigned long time )
 			continue;
 		}
 		SendResponse(i + 1);
-		CloseScreen();
+		if (TestBit(pState->m_ButtonWaitFlags, i))
+		{
+			pState->m_ButtonDismissTimer = time;
+		}
+		else
+		{
+			CloseScreen();
+		}
 		return;
 	}
 }
@@ -94,42 +133,63 @@ void DialogScreen::ParseDialog( const char *str )
 {
 	auto *pState = GetActiveState();
 	pState->m_CheckFlags = 0;
+	pState->m_AlignFlags = 0;
 	pState->m_ButtonHoldFlags = 0;
+	pState->m_ButtonWaitFlags = 0;
+	pState->m_ButtonDismissTimer = 0;
 
 	// parse id
 	pState->m_Id = atol(str);
 	str = strchr(str, '|') + 1;
 
-	// larse lines
+	// parse lines
 	for (uint8_t i = 0; i < 4; i++)
 	{
+		if (i > 0 && *str == '^')
+		{
+			pState->m_AlignFlags |= 1 << (i - 1);
+			str++;
+		}
+		if (i > 0 && *str == CHAR_UNCHECKED)
+		{
+			pState->m_CheckFlags |= 1 << (i - 1);
+			pState->m_AlignFlags |= 1 << (i - 1);
+		}
 		const char *end = strchr(str, '|');
 		uint8_t len = (uint8_t)(end - str);
 		if (len > 18) len = 18;
 		memcpy(pState->m_Lines[i], str, len);
 		pState->m_Lines[i][len] = 0;
-		if (i > 0 && *str == CHAR_UNCHECKED)
-		{
-			pState->m_CheckFlags |= 1 << (i - 1);
-		}
 		str = end + 1;
 	}
 
 	// parse buttons
 	const char *end = strchr(str, ',');
 	uint8_t len = (uint8_t)(end - str);
-	if (len > MAX_BUTTON_SIZE) len = MAX_BUTTON_SIZE;
 	if (*str == CHAR_HOLD)
 	{
 		pState->m_ButtonHoldFlags |= 1;
 		str++;
 		len--;
 	}
+	if (*str == '!')
+	{
+		pState->m_ButtonWaitFlags |= 1;
+		str++;
+		len--;
+	}
+	if (len > MAX_BUTTON_SIZE) len = MAX_BUTTON_SIZE;
 	memcpy(pState->m_Buttons[0], str, len);
 	pState->m_Buttons[0][len] = 0;
 	str = end + 1;
 
 	len = Strlen(str);
+	if (*str == '!')
+	{
+		pState->m_ButtonWaitFlags |= 2;
+		str++;
+		len--;
+	}
 	if (len > 0 && str[len - 1] == CHAR_HOLD)
 	{
 		pState->m_ButtonHoldFlags |= 2;

@@ -1,10 +1,11 @@
 #define PENDANT_VERSION "1.0" // must match Pendant.js
 #define PENDANT_BAUD_RATE 38400 // must match Pendant.js
-#define ENABLE_ABORT_BUTTON // adds a new button that directly sends "ABORT" to the PC
+
+#include "Config.h"
 
 const uint8_t g_Font[] U8X8_PROGMEM =
 {
-#include "d:\work\projects\pendant\font.txt"
+#include "font.h"
 };
 
 char g_TextBuf[20];
@@ -15,7 +16,7 @@ char g_TextBuf[20];
 #include "Input.h"
 #include "MachineStatus.h"
 
-const unsigned long PING_TIME = 2000; // 2 seconds of no PONG will disconnect
+const unsigned long PING_TIME = 10000; // 10 seconds of no PONG will disconnect (could be shorter, but I noticed that when VSCode starts up, the COM traffic stalls for a few seconds)
 const unsigned long SHOW_STOP_TIME = 500; // after 500ms after the last idle, allow showing s STOP button
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -26,14 +27,16 @@ unsigned long g_CurrentTime;
 unsigned long g_LastPingTime;
 unsigned long g_LastPongTime;
 unsigned long g_LastIdleTime;
+unsigned long g_LastBusyTime;
 bool g_bCanShowStop;
 
 // coordinate systems
 float g_WorkX, g_WorkY, g_WorkZ;
 float g_OffsetX, g_OffsetY, g_OffsetZ; // machine = work + offset
-bool g_bShowWork = true;
+bool g_bWorkSpace = true;
 bool g_bShowInches = true;
 bool g_bJobRunning = false;
+bool g_bRecentlyHomed = false;
 
 enum
 {
@@ -46,9 +49,9 @@ uint8_t g_TloState = 0;
 
 // feed and speed
 uint16_t g_FeedOverride;
-uint16_t g_RpmOverride;
+uint16_t g_SpeedOverride;
 uint16_t g_RealFeed;
-uint16_t g_RealRpm;
+uint16_t g_RealSpeed;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -57,10 +60,14 @@ BaseScreen *BaseScreen::s_pCurrentScreen;
 #include "_ScreenClasses.h"
 
 AlarmScreen g_AlarmScreen;
+#ifndef DISABLE_CALIBRATION_SCREEN
 CalibrationScreen g_CalibrationScreen;
+#endif
 DialogScreen g_DialogScreen;
 JogScreen g_JogScreen;
+#ifndef DISABLE_MACRO_SCREEN
 MacroScreen g_MacroScreen;
+#endif
 MainScreen g_MainScreen;
 ProbeMenuScreen g_ProbeMenuScreen;
 RunScreen g_RunScreen;
@@ -151,9 +158,9 @@ void ParseStatus( const char *status )
 	g_WorkY = atof(status); status = strchr(status, ',') + 1;
 	g_WorkZ = atof(status); status = strchr(status, '|') + 1;
 	g_FeedOverride = atoi(status); status = strchr(status, ',') + 1;
-	g_RpmOverride = atoi(status); status = strchr(status, ',') + 1;
+	g_SpeedOverride = atoi(status); status = strchr(status, ',') + 1;
 	g_RealFeed = atoi(status); status = strchr(status, ',') + 1;
-	g_RealRpm = atoi(status);
+	g_RealSpeed = atoi(status);
 }
 
 // Parses the STATUS2: string from the PC
@@ -162,6 +169,8 @@ void ParseStatus2( const char *status )
 {
 	g_bJobRunning = status[0] == 'J';
 	if (g_bJobRunning) status++;
+	g_bRecentlyHomed = status[0] == 'H';
+	if (g_bRecentlyHomed) status++;
 	g_TloState = status[0] - '0';
 	status++;
 	g_OffsetX = atof(status); status = strchr(status, ',') + 1;
@@ -175,7 +184,7 @@ void ParseUnits( const char *units )
 {
 	g_bShowInches = *units == 'I';
 	units = strchr(units, '|');
-	g_JogScreen.ParseJogRates(units);
+	g_JogScreen.ParseJogSteps(units);
 }
 
 // Handles the PEN handshake prompt from the PC. responds with DENT:<version> and the current ROM settings
@@ -240,13 +249,17 @@ void ProcessCommand( const char *command, unsigned long time )
 	}
 	if (strncmp(command, "MACROS:", 7) == 0)
 	{
+#ifndef DISABLE_MACRO_SCREEN
 		g_MacroScreen.ParseMacros(command + 7);
+#endif
 		return;
 	}
 
 	if (strncmp(command, "CAL:", 4) == 0)
 	{
+#ifndef DISABLE_CALIBRATION_SCREEN
 		g_CalibrationScreen.ProcessCommand(command + 4, time);
+#endif
 		return;
 	}
 
@@ -274,10 +287,25 @@ void ProcessCommand( const char *command, unsigned long time )
 		g_RunScreen.Activate(time);
 		return;
 	}
+
+	if (strncmp(command, "PROBESCREEN:", 12) == 0)
+	{
+		g_ZProbeScreen.Activate(time, (ZProbeScreen::ProbeMode)(command[12] - '0'), false);
+		return;
+	}
 }
 
 void setup( void )
 {
+#ifndef EMULATOR
+	// HACK: 4808-based Arduino clones have I2C on pins D4 and D5 instead of A4 and A5. To support both on the same
+	// PCB, I have the pairs shorted together. For safety, the unused pair needs to be marked as INPUT. So
+	// here initialize all 4 pins as inputs to avoid interfering with I2C.
+	pinMode(A4, INPUT);
+	pinMode(A5, INPUT);
+	pinMode(4, INPUT);
+	pinMode(5, INPUT);
+#endif
 	Serial.begin(PENDANT_BAUD_RATE);
 	InitializeInput();
 	InitializeStatusStrings();
@@ -288,12 +316,19 @@ void setup( void )
 	g_WelcomeScreen.Activate(g_CurrentTime);
 }
 
+int g_Frame = 0;
+uint16_t g_Dtt = 0;
+uint16_t g_DtMax = 0;
+
 void loop( void )
 {
 	unsigned long time = millis();
 	if (time == 0) time = 1; // skip time 0, so 0 can be used as uninitialized value
 	uint16_t dt = (uint16_t)(time - g_CurrentTime);
 	g_CurrentTime = time;
+
+	g_Dtt += dt;
+	if (g_DtMax < dt) g_DtMax = dt;
 
 	// process connection status
 	if (g_bConnected)
@@ -332,11 +367,13 @@ void loop( void )
 	bool bScreenSelected = true;
 	if (!g_bConnected || g_MachineStatus == STATUS_DISCONNECTED)
 	{
+#ifndef DISABLE_CALIBRATION_SCREEN
 		if (g_CalibrationScreen.IsActive())
 		{
 			bScreenSelected = false;
 		}
 		else
+#endif
 		{
 			g_WelcomeScreen.Activate(time);
 		}
@@ -355,6 +392,10 @@ void loop( void )
 	{
 		g_LastIdleTime = time;
 	}
+	else
+	{
+		g_LastBusyTime = time;
+	}
 
 	g_bCanShowStop = (time - g_LastIdleTime > SHOW_STOP_TIME);
 
@@ -367,7 +408,6 @@ void loop( void )
 	UpdateButtonState(physicalButtons, dt);
 	UpdateJoystick();
 
-#ifdef ENABLE_ABORT_BUTTON
 	// check for Abort button
 	if (TestBit(g_ButtonClick, BUTTON_ABORT))
 	{
@@ -377,29 +417,44 @@ void loop( void )
 			g_MainScreen.Activate(time);
 		}
 	}
-#endif
 
+#ifndef DISABLE_CALIBRATION_SCREEN
 	if (g_CalibrationScreen.ShouldSendXY())
 	{
 		g_CalibrationScreen.SendXYUpdate(false);
 	}
+#endif
 
 	// update current screen
 	BaseScreen::s_pCurrentScreen->Update(time);
 
 	// draw
 #if U8G2_FULL_BUFFER
-	u8g2.clearBuffer();
-	u8g2.setColorIndex(1);
+	BaseScreen::ClearScreen();
+	SetColorIndex(1);
 	BaseScreen::s_pCurrentScreen->Draw();
+#if PARTIAL_SCREEN_UPDATE
+	BaseScreen::UpdateScreen();
+#else
 	u8g2.sendBuffer();
+#endif
 #else
 	u8g2.firstPage();
 	do
 	{
-		u8g2.setColorIndex(1);
+		SetColorIndex(1);
 		BaseScreen::s_pCurrentScreen->Draw();
 	}
 	while (u8g2.nextPage());
 #endif
+
+	g_Frame++;
+	if (g_Frame == 30)
+	{
+/*		Serial.print("FPS: ");
+		Serial.print(g_Dtt/30);
+		Serial.print(" MAX: ");
+		Serial.println(g_DtMax);*/
+		g_Frame=g_Dtt=g_DtMax=0;
+	}
 }

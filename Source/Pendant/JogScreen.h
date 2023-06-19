@@ -1,6 +1,9 @@
+const int WHEEL_UPDATE_TIME = 100; // don't send wheel updates more than once every 100ms
+const int JOYSTICK_UPDATE_TIME = 100; // don't send joystick updates more than once every 100ms
+
 const char g_AxisName[5] = {' ', 'X', 'Y', ' ', 'Z'};
 
-#ifdef USE_SHARED_STATE
+#if USE_SHARED_STATE
 JogScreen::ActiveState *JogScreen::GetActiveState( void )
 {
 	Assert(IsActive());
@@ -15,104 +18,153 @@ void JogScreen::SetAxis( uint8_t axis )
 
 JogScreen::JogScreen( void )
 {
-	m_JogRateCount = 2;
-	m_JogRates[0] = 10;
-	m_JogRates[1] = 100;
+	m_StepRateCount = 2;
+	m_StepRates[0] = 10;
+	m_StepRates[1] = 100;
 }
 
 void JogScreen::Draw( void )
 {
 	auto *pState = GetActiveState();
-	DrawMachineStatus();
 
-	PrintX(g_TextBuf);
-	if (pState->m_Axis & 1)
+#if PARTIAL_SCREEN_UPDATE
+	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->bWorkSpace != g_bWorkSpace ||
+		pDrawState->bShowInches != g_bShowInches || pDrawState->axis != pState->m_Axis ||
+		pDrawState->bShowStop != pState->m_bShowStop || pDrawState->bShowActions != pState->m_bShowActions ||
+		pDrawState->bShowAlign != pState->m_bShowAlign || pDrawState->stepIndex != m_StepIndex;
+	pDrawState->bWorkSpace = g_bWorkSpace;
+	pDrawState->bShowInches = g_bShowInches;
+	pDrawState->axis = pState->m_Axis;
+	pDrawState->bShowStop = pState->m_bShowStop;
+	pDrawState->bShowActions = pState->m_bShowActions;
+	pDrawState->bShowAlign = pState->m_bShowAlign;
+	pDrawState->stepIndex = m_StepIndex;
+	if (bDrawAll && !s_DrawState.bDrawAll)
 	{
-		u8g2.setColorIndex(1);
-		u8g2.drawBox(0, g_Rows[1] - 1, 8, 10);
-		u8g2.setColorIndex(0);
-		DrawText(0, 1, g_StrBoldX);
-		u8g2.setColorIndex(1);
-		DrawTextBold(2, 1, g_TextBuf);
-	}
-	else
-	{
-		u8g2.setColorIndex(1);
-		DrawText(0, 1, g_StrX);
-		DrawText(2, 1, g_TextBuf);
-	}
-
-	PrintY(g_TextBuf);
-	if (pState->m_Axis & 2)
-	{
-		u8g2.setColorIndex(1);
-		u8g2.drawBox(0, g_Rows[2] - 1, 8, 10);
-		u8g2.setColorIndex(0);
-		DrawText(0, 2, g_StrBoldY);
-		u8g2.setColorIndex(1);
-		DrawTextBold(2, 2, g_TextBuf);
-	}
-	else
-	{
-		u8g2.setColorIndex(1);
-		DrawText(0, 2, g_StrY);
-		DrawText(2, 2, g_TextBuf);
+		ClearBuffer();
 	}
 
-	PrintZ(g_TextBuf);
-	if (pState->m_Axis & 4)
-	{
-		u8g2.setColorIndex(1);
-		u8g2.drawBox(0, g_Rows[3] - 1, 8, 10);
-		u8g2.setColorIndex(0);
-		DrawText(0, 3, g_StrBoldZ);
-		u8g2.setColorIndex(1);
-		DrawTextBold(2, 3, g_TextBuf);
-	}
-	else
-	{
-		u8g2.setColorIndex(1);
-		DrawText(0, 3, g_StrZ);
-		DrawText(2, 3, g_TextBuf);
-	}
+	const bool bDrawX = bDrawAll || pDrawState->wx != g_WorkX || pDrawState->ox != g_OffsetX;
+	const bool bDrawY = bDrawAll || pDrawState->wy != g_WorkY || pDrawState->oy != g_OffsetY;
+	const bool bDrawZ = bDrawAll || pDrawState->wz != g_WorkZ || pDrawState->oz != g_OffsetZ;
+	pDrawState->wx = g_WorkX;
+	pDrawState->ox = g_OffsetX;
+	pDrawState->wy = g_WorkY;
+	pDrawState->oy = g_OffsetY;
+	pDrawState->wz = g_WorkZ;
+	pDrawState->oz = g_OffsetZ;
+#else
+	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawAll = true;
+#endif
 
-	DrawText(13, 1, g_bShowWork ? g_StrWCS : g_StrMCS);
-	if ((pState->m_Axis & (pState->m_Axis-1)) == 0)
+	if (bDrawAll)
 	{
-		// only one axis is selected
-		uint16_t rate = m_JogRates[m_Rate];
-		const char *verb = pState->m_bShowRound ? "Mul " : "Rate ";
-		int8_t len = g_bShowInches ? Sprintf(g_TextBuf, "%s%1d.%03d", verb, rate/1000, rate%1000) : Sprintf(g_TextBuf, "%s%2d.%02d", verb, rate/100, rate%100);
-		DrawButton(BUTTON_RATE, g_TextBuf, len, pState->m_bShowRound);
-
-		if (g_MachineStatus == STATUS_IDLE)
+		DrawMachineStatus(g_StrJOG, 3);
+		DrawText(13, 1, g_bWorkSpace ? g_StrWCS : g_StrMCS);
+		if ((pState->m_Axis & (pState->m_Axis-1)) == 0)
 		{
-			DrawButton(BUTTON_GOTO0, ROMSTR("To 0"), 4, true);
-			if (g_bShowWork)
+			// only one axis is selected
+			uint16_t step = m_StepRates[m_StepIndex];
+			if (pState->m_bShowAlign)
 			{
-				DrawButton(BUTTON_SET0, ROMSTR("Set 0"), 5, true);
+				DrawButton(BUTTON_STEP, ROMSTR("Align"), 5, true);
 			}
 			else
 			{
+				int8_t len = g_bShowInches ? Sprintf(g_TextBuf, "Step %1d.%03d", step/1000, step%1000) : Sprintf(g_TextBuf, "Step %2d.%02d", step/100, step%100);
+				DrawButton(BUTTON_STEP, g_TextBuf, len, false);
+			}
+
+			if (pState->m_bShowActions)
+			{
+				DrawButton(BUTTON_GOTO0, ROMSTR("To 0"), 4, true);
+				if (g_bWorkSpace)
+				{
+					DrawButton(BUTTON_SET0, ROMSTR("Set 0"), 5, true);
+				}
+				else
+				{
+					DrawUnusedButtons(0x40);
+				}
+			}
+			else if (pState->m_bShowStop)
+			{
+				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
 				DrawUnusedButtons(0x40);
 			}
-		}
-		else if (pState->m_bShowStop)
-		{
-			DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
-			DrawUnusedButtons(0x40);
+			else
+			{
+				DrawUnusedButtons(0x60);
+			}
 		}
 		else
 		{
-			DrawUnusedButtons(0x60);
+			// XY selected
+			DrawUnusedButtons(0x68);
+		}
+		DrawButton(BUTTON_BACK, g_StrBack, 4, false);
+	}
+
+	if (bDrawX)
+	{
+		PrintX(g_TextBuf);
+		if (pState->m_Axis & 1)
+		{
+			SetColorIndex(1);
+			DrawBox(0, g_Rows[1] - 1, 8, 10);
+			SetColorIndex(0);
+			DrawText(0, 1, g_StrBoldX);
+			SetColorIndex(1);
+			DrawTextBold(2, 1, g_TextBuf);
+		}
+		else
+		{
+			SetColorIndex(1);
+			DrawText(0, 1, g_StrX);
+			DrawText(2, 1, g_TextBuf);
 		}
 	}
-	else
+
+	if (bDrawY)
 	{
-		// XY selected
-		DrawUnusedButtons(0x68);
+		PrintY(g_TextBuf);
+		if (pState->m_Axis & 2)
+		{
+			SetColorIndex(1);
+			DrawBox(0, g_Rows[2] - 1, 8, 10);
+			SetColorIndex(0);
+			DrawText(0, 2, g_StrBoldY);
+			SetColorIndex(1);
+			DrawTextBold(2, 2, g_TextBuf);
+		}
+		else
+		{
+			SetColorIndex(1);
+			DrawText(0, 2, g_StrY);
+			DrawText(2, 2, g_TextBuf);
+		}
 	}
-	DrawButton(BUTTON_BACK, g_StrBack, 4, false);
+
+	if (bDrawZ)
+	{
+		PrintZ(g_TextBuf);
+		if (pState->m_Axis & 4)
+		{
+			SetColorIndex(1);
+			DrawBox(0, g_Rows[3] - 1, 8, 10);
+			SetColorIndex(0);
+			DrawText(0, 3, g_StrBoldZ);
+			SetColorIndex(1);
+			DrawTextBold(2, 3, g_TextBuf);
+		}
+		else
+		{
+			SetColorIndex(1);
+			DrawText(0, 3, g_StrZ);
+			DrawText(2, 3, g_TextBuf);
+		}
+	}
 }
 
 void JogScreen::Update( unsigned long time )
@@ -126,6 +178,20 @@ void JogScreen::Update( unsigned long time )
 
 	// must be before setting m_LastInputTime, otherwise the STOP button will dismiss itself
 	pState->m_bShowStop = g_bCanShowStop && (time - pState->m_LastInputTime > SHOW_STOP_TIME); // half second of no idle and no input
+	if (pState->m_bShowActions)
+	{
+		if (g_MachineStatus < STATUS_IDLE)
+		{
+			pState->m_bShowActions = false; // hide actions as soon as not idle
+		}
+	}
+	else
+	{
+		if (time - g_LastBusyTime > 250)
+		{
+			pState->m_bShowActions = true; // delay showing the actions by 250ms to reduce flicker
+		}
+	}
 
 	if (g_ButtonState != 0)
 	{
@@ -157,7 +223,7 @@ void JogScreen::Update( unsigned long time )
 	}
 	else if (button == BUTTON_WCS)
 	{
-		g_bShowWork = !g_bShowWork;
+		g_bWorkSpace = !g_bWorkSpace;
 	}
 	else if (button == BUTTON_BACK)
 	{
@@ -167,43 +233,48 @@ void JogScreen::Update( unsigned long time )
 
 	if ((pState->m_Axis & (pState->m_Axis-1)) == 0)
 	{
-		pState->m_bShowRound = pState->m_RateDownTime != 0 && time - pState->m_RateDownTime > BUTTON_HOLD_TIME / 2;
-		// only one axis is selected
-		if (button == BUTTON_RATE)
+		bool bShowAlign = pState->m_StepHoldTime != 0 && time - pState->m_StepHoldTime > BUTTON_HOLD_TIME / 2;
+		if (bShowAlign && !pState->m_bShowAlign)
 		{
-			pState->m_RateDownTime = time;
+			g_ButtonChangeTimers[BUTTON_STEP] = 0;
 		}
-		if (pState->m_bShowRound && TestBit(g_ButtonHold, BUTTON_RATE))
+		pState->m_bShowAlign = bShowAlign;
+		// only one axis is selected
+		if (button == BUTTON_STEP)
 		{
-			// Rate button held down for full time, round by the rate
-			Serial.print(g_StrJOG);
-			uint16_t rate = m_JogRates[m_Rate];
+			pState->m_StepHoldTime = time;
+		}
+		if (pState->m_bShowAlign && TestBit(g_ButtonHold, BUTTON_STEP))
+		{
+			// Step button held down for full time, align to the step rate
+			Serial.print(g_StrJOG2);
+			uint16_t step = m_StepRates[m_StepIndex];
 			if (g_bShowInches)
 			{
-				Sprintf(g_TextBuf, "RI%c%c%d.%03d", g_bShowWork ? 'L' : 'G', g_AxisName[pState->m_Axis], rate/1000, rate%1000);
+				Sprintf(g_TextBuf, "AI%c%c%d.%03d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], step/1000, step%1000);
 			}
 			else
 			{
-				Sprintf(g_TextBuf, "RM%c%c%d.%02d", g_bShowWork ? 'L' : 'G', g_AxisName[pState->m_Axis], rate/100, rate%100);
+				Sprintf(g_TextBuf, "AM%c%c%d.%02d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], step/100, step%100);
 			}
 			Serial.println(g_TextBuf);
 		}
-		else if (!pState->m_bShowRound && TestBit(g_ButtonUnclick, BUTTON_RATE))
+		else if (!pState->m_bShowAlign && TestBit(g_ButtonUnclick, BUTTON_STEP))
 		{
-			m_Rate = (m_Rate + 1) % m_JogRateCount;
+			m_StepIndex = (m_StepIndex + 1) % m_StepRateCount;
 		}
 
-		if (g_MachineStatus == STATUS_IDLE)
+		if (pState->m_bShowActions && g_MachineStatus == STATUS_IDLE)
 		{
-			if (TestBit(g_ButtonHold, BUTTON_SET0) && g_bShowWork)
+			if (TestBit(g_ButtonHold, BUTTON_SET0) && g_bWorkSpace)
 			{
 				Sprintf(g_TextBuf, "SET0:%c", g_AxisName[pState->m_Axis]);
 				Serial.println(g_TextBuf);
 			}
 			else if (TestBit(g_ButtonHold, BUTTON_GOTO0))
 			{
-				Serial.print(g_StrJOG);
-				Sprintf(g_TextBuf, "0%c%c", g_bShowWork ? 'L' : 'G', g_AxisName[pState->m_Axis]);
+				Serial.print(g_StrJOG2);
+				Sprintf(g_TextBuf, "0%c%c", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis]);
 				Serial.println(g_TextBuf);
 			}
 		}
@@ -212,24 +283,28 @@ void JogScreen::Update( unsigned long time )
 			Serial.println(g_StrSTOP);
 		}
 
-		// process wheel
-		int16_t wheel = EncoderDrainValue();
-		if (wheel != 0)
+		// process wheel, but not too frequently
+		if (time - pState->m_LastWheelTime >= WHEEL_UPDATE_TIME)
 		{
-			pState->m_LastInputTime = time;
-			if (g_MachineStatus == STATUS_IDLE || g_MachineStatus == STATUS_JOG || g_MachineStatus == STATUS_RUNNING)
+			int16_t wheel = EncoderDrainValue();
+			if (wheel != 0)
 			{
-				uint16_t rate = m_JogRates[m_Rate];
-				if (g_bShowInches)
+				pState->m_LastInputTime = time;
+				pState->m_LastWheelTime = time;
+				if (g_MachineStatus == STATUS_IDLE || g_MachineStatus == STATUS_JOG || g_MachineStatus == STATUS_RUNNING)
 				{
-					Sprintf(g_TextBuf, "WI%c%d*%d.%03d", g_AxisName[pState->m_Axis], wheel, rate/1000, rate%1000);
+					uint16_t step = m_StepRates[m_StepIndex];
+					if (g_bShowInches)
+					{
+						Sprintf(g_TextBuf, "WI%c%d*%d.%03d", g_AxisName[pState->m_Axis], wheel, step/1000, step%1000);
+					}
+					else
+					{
+						Sprintf(g_TextBuf, "WM%c%d*%d.%02d", g_AxisName[pState->m_Axis], wheel, step/100, step%100);
+					}
+					Serial.print(g_StrJOG2);
+					Serial.println(g_TextBuf);
 				}
-				else
-				{
-					Sprintf(g_TextBuf, "WM%c%d*%d.%02d", g_AxisName[pState->m_Axis], wheel, rate/100, rate%100);
-				}
-				Serial.print(g_StrJOG);
-				Serial.println(g_TextBuf);
 			}
 		}
 	}
@@ -244,18 +319,28 @@ void JogScreen::Update( unsigned long time )
 		}
 		if (pState->m_OldJoyX != x || pState->m_OldJoyY != y)
 		{
-			pState->m_OldJoyX = x;
-			pState->m_OldJoyY = y;
-			Serial.print(g_StrJOG);
-			Sprintf(g_TextBuf, "JXY%d,%d", x, y);
-			Serial.println(g_TextBuf);
+			int16_t d1 = pState->m_OldJoyX * pState->m_OldJoyX + pState->m_OldJoyY * pState->m_OldJoyY;
+			int16_t d2 = x * x + y * y;
+			if ((x == 0 && y == 0) || d2 > d1 || time - pState->m_LastJoystickTime >= JOYSTICK_UPDATE_TIME)
+			{
+				pState->m_OldJoyX = x;
+				pState->m_OldJoyY = y;
+				pState->m_LastJoystickTime = time;
+				Serial.print(g_StrJOG2);
+				Sprintf(g_TextBuf, "JXY%d,%d", x, y);
+				Serial.println(g_TextBuf);
+			}
+		}
+		else if (x != 0 || y != 0)
+		{
+			pState->m_LastJoystickTime = time; // reset timer if the joystick hasn't moved
 		}
 	}
 
-	if (!TestBit(g_ButtonState, BUTTON_RATE))
+	if (!TestBit(g_ButtonState, BUTTON_STEP))
 	{
-		pState->m_RateDownTime = 0;
-		pState->m_bShowRound = false;
+		pState->m_StepHoldTime = 0;
+		pState->m_bShowAlign = false;
 	}
 }
 
@@ -264,27 +349,39 @@ void JogScreen::Activate( unsigned long time )
 	BaseScreen::Activate(time);
 	auto *pState = GetActiveState();
 	pState->m_LastInputTime = time;
-	pState->m_RateDownTime = 0;
-	pState->m_bShowRound = false;
+	pState->m_StepHoldTime = 0;
+	pState->m_LastWheelTime = time;
+	pState->m_LastJoystickTime = time;
+	pState->m_bShowStop = false;
+	pState->m_bShowActions = true;
+	pState->m_bShowAlign = false;
 	GetJoystick(&pState->m_OldJoyX, &pState->m_OldJoyY);
 	EncoderDrainValue();
 }
 
-// Parses the jog rate string from the PC - |<rate1>|<rate2> ... - up to 5
-void JogScreen::ParseJogRates( const char *str )
+// Parses the jog step rate string from the PC - |<rate1>|<rate2> ... - up to 5
+void JogScreen::ParseJogSteps( const char *str )
 {
-	m_JogRateCount = 0;
-	while (str && m_JogRateCount < 5)
+	m_StepRateCount = 0;
+	while (str && m_StepRateCount < 5)
 	{
-		m_JogRates[m_JogRateCount++] = atol(str + 1);
+		m_StepRates[m_StepRateCount++] = atol(str + 1);
 		str = strchr(str + 1, '|');
 	}
-	if (m_JogRateCount == 0)
+	if (m_StepRateCount == 0)
 	{
-		m_JogRates[0] = 10;
-		m_JogRates[1] = 100;
-		m_JogRateCount = 2;
+		m_StepRates[0] = 10;
+		m_StepRates[1] = 100;
+		m_StepRateCount = 2;
 	}
+
+	if (m_StepIndex > m_StepRateCount - 1)
+	{
+		m_StepIndex = m_StepRateCount - 1;
+	}
+#if PARTIAL_SCREEN_UPDATE
+	s_DrawState.bDrawAll = true;
+#endif
 }
 
 void JogScreen::GetJoystick( int8_t *px, int8_t *py )

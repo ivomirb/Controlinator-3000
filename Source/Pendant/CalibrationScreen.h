@@ -2,6 +2,17 @@ DEFINE_STRING(g_StrCAL, "CAL:");
 
 void CalibrationScreen::Draw( void )
 {
+#if PARTIAL_SCREEN_UPDATE
+	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->stage != m_Stage;
+	pDrawState->stage = m_Stage;
+	if (!bDrawAll) return;
+	if (!s_DrawState.bDrawAll)
+	{
+		ClearBuffer();
+	}
+#endif
+
 	if (m_Stage == 0)
 	{
 		DrawText(0, 0, ROMSTR("[Calibrate Range]"));

@@ -1,17 +1,37 @@
 // For reference: https://github.com/gnea/grbl/blob/master/doc/markdown/commands.md
 
-// These must match Main.h
-const PENDANT_VERSION = "1.0";
-const PENDANT_BAUD_RATE = 38400;
-
-const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - also ACK
-
 // Normally the Arduino Nano is programmed via the USB cable. This requires the Arduino to reset when a serial connection is initiated.
 // If this is the case, set the value to true. The PC will wait 2 seconds after opening the connection before trying to communicate.
 // You can connect a capacitor between RST and GND, which will disable the reset and improve the speed of the initial connection.
 // If this is the case, set the value to false.
 // Also if you use a microcontroller that is programmed via the UPDI pin instead of USB, set this to false as well.
 const ARDUINO_RESETS_ON_CONNECT = true;
+
+// This flag causes the Z Down button in the probing screen to use the G38.3 command instead of $J, which will stop if the probe is touched.
+// It is not entirely safe because plunging into a hard probe at jogging speeds is never safe, but might reduce the damage to the probe or the endmill.
+// It will work better if the probe uses a button with some overtravel capability, like many button-based tool sensors.
+// The downside is the loss of some responsiveness for the Up and Down buttons.
+const SAFE_PROBE_JOG = true;
+
+// The step size for changing the feed or speed override. Smaller number allows for more precise control
+const WHEEL_OVERRIDE_STEP = 5; // 5% per click
+
+// This value controls how much travel time to submit to Grbl ahead of time. Longer value makes the jog smoother, but less responsive.
+const WHEEL_JOG_AHEAD_TIME = 600; // up to 600ms of jog time submitted to Grbl
+
+// This value controls how long after you stop turning the wheel the jog will stop. Smaller number will make the stop
+// more responsive and prevent long runaway jog movements. It comes at the expense of lost clicks of the wheel.
+// To avoid losing any clicks (the machine will move the exact number of clicks), use a very large number like 100000
+const WHEEL_JOG_STOP_TIME = 100; // the jog will stop 100ms after the last click
+
+// These must match Main.h
+const PENDANT_VERSION = "1.0";
+const PENDANT_BAUD_RATE = 38400;
+
+// Must match Input.h
+const JOYSTICK_STEPS = 10;
+
+const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - everything+ACK
 
 const {
 	SerialPort
@@ -29,6 +49,7 @@ const CHAR_HOLD = String.fromCharCode(0x03);
 const CHAR_ACK = String.fromCharCode(0x1F);
 const MAX_MESSAGE_LENGTH = 50; // send up to 50 bytes to the pendant and then wait for ACK. Arduino has only 64 bytes of buffer for the serial connection
 
+var g_StatusCounter = 0;
 // Status cache - store the last sent value to avoid spamming when nothing changes
 var g_LastStatusStr = undefined;
 var g_LastStatus2Str = undefined;
@@ -36,11 +57,14 @@ var g_LastStatus2Str = undefined;
 var g_PendantSettings = GetDefaultSettings();
 var g_PendantRomSettings = GetDefaultRomSettings();
 
-var g_TloRefZ = undefined;
+var g_TloRefZ = undefined; // absolute Z of the tool probe measured with the reference tool
+var g_ProbeZDownFeed = 50; // feed rate for the Z Down button (in % of $112)
+var g_ProbeJog; // -1 - up, 1 - down
+var g_LastProbeZ;
 
-var g_Probe;
-var g_ProbeJogDown = false;
-var g_bSafeStopPending = false;
+var g_SafeStopPending = 0; // 0 - ignore, 1 - clear on idle, 2 - don't clear on idle
+var g_LastBusyTime = undefined;
+var g_LastUpdateTime = undefined;
 
 // This table match the names and order in MachineStatus.h
 const g_StatusMap =
@@ -75,8 +99,8 @@ function GetDefaultSettings()
 		// main settings
 		autoConnect: true,
 		displayUnits: "mm",
-		wheelRatesMm: [1, 0.01, 0.1, 0.5],
-		wheelRatesIn: [0.1, 0.001, 0.01],
+		wheelStepsMm: [1, 0.1, 0.01],
+		wheelStepsIn: [0.1, 0.01, 0.001],
 		pauseSpindle: false,
 		jobChecklist: "Remove Probe|Turn On Spindle",
 		safeLimitsEnabled: true,
@@ -88,20 +112,21 @@ function GetDefaultSettings()
 		zProbe: {
 			style: "single",
 			downSpeed: 50,
-			descent1: {travel: 15, feed:  100},
+			seek1: {travel:    15, feed:  100},
 			retract1: {travel:  5, feed: 1000},
-			descent2: {travel:  1, feed:   50},
+			seek2: {travel:     1, feed:   50},
 			retract2: {travel:  5, feed: 1000},
 			thickness: undefined,
+			useProbeResult: false,
 		},
 
 		// tool probe
 		toolProbe: {
 			style: "disable",
 			downSpeed: 50,
-			descent1: {travel: 15, feed:  100},
+			seek1: {travel:    15, feed:  100},
 			retract1: {travel:  5, feed: 1000},
-			descent2: {travel:  1, feed:   50},
+			seek2: {travel:     1, feed:   50},
 			retract2: {travel:  5, feed: 1000},
 			location: {X: 0, Y: 0, Z: 0},
 		},
@@ -154,7 +179,7 @@ function GenerateStatusString(s)
 	else
 	{
 		status = g_StatusMap[s.comms.runStatus];
-		if (status == g_StatusMap.Running && g_JogLocation != undefined)
+		if (status == g_StatusMap.Running && (g_JogXYLocation != undefined || g_JogWQueue != undefined || g_ProbeJog != undefined))
 		{
 			status = g_StatusMap.Jog;
 		}
@@ -164,8 +189,8 @@ function GenerateStatusString(s)
 		+ s.machine.position.work.x.toFixed(3) + ","
 		+ s.machine.position.work.y.toFixed(3) + ","
 		+ s.machine.position.work.z.toFixed(3) + "|"
-		+ s.machine.overrides.feedOverride.toFixed(0) + ","
-		+ s.machine.overrides.spindleOverride.toFixed(0) + ","
+		+ (g_TargetFeedRate != undefined ? g_TargetFeedRate : s.machine.overrides.feedOverride.toFixed(0)) + ","
+		+ (g_TargetSpeedRate != undefined ? g_TargetSpeedRate : s.machine.overrides.spindleOverride.toFixed(0)) + ","
 		+ s.machine.overrides.realFeed.toFixed(0) + ","
 		+ s.machine.overrides.realSpindle.toFixed(0);
 	return str;
@@ -185,9 +210,9 @@ function GenerateStatus2String(s)
 		}
 	}
 
-	// secondary status string - STATUS2:offsetX,offsetY,offsetZ
+	// secondary status string - STATUS2:[J][H]<tlo>offsetX,offsetY,offsetZ
 	var str = "STATUS2:"
-		+ (lastJobStartTime ? "J" : "") + tlo
+		+ (lastJobStartTime ? "J" : "") + (s.machine.modals.homedRecently ? "H" : "") + tlo
 		+ s.machine.position.offset.x.toFixed(3) + ","
 		+ s.machine.position.offset.y.toFixed(3) + ","
 		+ s.machine.position.offset.z.toFixed(3);
@@ -218,144 +243,87 @@ function PushStatus(status)
 // Processes the status from  the machine
 function HandleStatus(status)
 {
+	g_StatusCounter++;
+	g_LastUpdateTime = Date.now();
 	if (status.comms.runStatus == "Idle")
 	{
-		// update jog location on every idle
-		if (g_JogLocation != undefined)
+		// update wheel jog location on every idle
+		if (g_SafeStopPending == 1) { g_SafeStopPending = 0; }
+		g_JogCancelPendingTime = undefined;
+	}
+	else
+	{
+		g_LastBusyTime = Date.now();
+		if (g_SafeStopPending != 0 && status.comms.runStatus == "Hold:0")
 		{
-			g_JogLocation.X = laststatus.machine.position.work.x + laststatus.machine.position.offset.x;
-			g_JogLocation.Y = laststatus.machine.position.work.y + laststatus.machine.position.offset.y;
-			g_JogLocation.Z = laststatus.machine.position.work.z + laststatus.machine.position.offset.z;
+			socket.emit('stop', {stop: true, jog: false, abort: false});
+			g_SafeStopPending = 0;
 		}
-
-		g_bSafeStopPending = false;
-	}
-	else if (g_bSafeStopPending && status.comms.runStatus == "Hold:0")
-	{
-		socket.emit('serialInject', String.fromCharCode(0x18)); // ctrl-x (soft reset)
-		g_bSafeStopPending = false;
-	}
-
-	if (g_ProbeJogDown && status.machine.inputs.includes('P')) // probe was hit while jogging down
-	{
-		socket.emit('stop', {stop: false, jog: true, abort: false});
-		g_ProbeJogDown = false;
 	}
 
 	// send to pendant
 	PushStatus(status);
 }
 
+// Returns true if the machine was idle for at least 500ms, and the last status update was no more than 300ms ago
+function IsStableIdle()
+{
+	if (g_LastUpdateTime != undefined)
+	{
+		var t = Date.now();
+		return ((g_LastBusyTime == undefined) || (t - g_LastBusyTime >= 500)) && t - g_LastUpdateTime <= 300;
+	}
+	return false;
+}
+
 // Handles the job completion event
 function HandleJobComplete(data)
 {
-	if (COM_LOG_LEVEL >= 1)
+	if (COM_LOG_LEVEL >= 1 && (data.jobStartTime || data.jobCompletedMsg.length > 0))
 	{
-		if (data.jobStartTime || data.jobCompletedMsg.length != "")
-		{
-			console.log("JOB COMPLETED", data);
-		}
+		console.log("JOB COMPLETED", data);
 	}
 
-	if (g_PendantPort && !data.failed && laststatus.comms.runStatus != "Alarm")
-	{
-		if (data.jobStartTime && data.jobEndTime)
-		{
-			// this is a real job
-			ShowPendantDialog({
-				title: "====== Done ======",
-				text: [
-					"  Job completed",
-					"   successfully"],
-				rButton: ["OK"],
-			});
-		}
-		if (data.jobCompletedMsg.startsWith("Probe Complete"))
-		{
-			data.jobCompletedMsg = "";
-			ShowPendantDialog({
-				title: "= Probe Complete =",
-				text: [
-					" Z = " + laststatus.machine.probe.z + " mm",
-					" Disconnect probe",
-					],
-				rButton: ["OK", function()
-				{
-					if (Metro.dialog.isOpen('#completeMsgModal'))
-					{
-						Metro.dialog.close('#completeMsgModal');
-					}
-				}],
-			});
-		}
-	}
-}
-
-// Handles the completion of probing
-function HandleProbeResult(probe)
-{
-	if (COM_LOG_LEVEL >= 1) { console.log("PROBE RESULT", probe, g_Probe); }
-	if (g_Probe == undefined)
+	if (g_PendantPort == undefined)
 	{
 		return;
 	}
-	if (probe.state == 0)
+
+	// if a job completed within 300ms of canceling the jog, cancel again. there is a race condition with canceling not
+	// working if there is a command currently being processed. afterwards Grbl sends 'ok', which triggers a job completion event
+	if (data.failed && g_JogCancelPendingTime != undefined)
 	{
+		if (Date.now() - g_JogCancelPendingTime < 300)
+		{
+			socket.emit('stop', {stop: false, jog: true, abort: false});
+		}
+		g_JogCancelPendingTime = undefined;
+		return;
+	}
+
+	if (!data.failed && data.jobStartTime && data.jobEndTime && laststatus.comms.runStatus != "Alarm")
+	{
+		// this is a real job
 		ShowPendantDialog({
-			title: "== Probe Failed ==",
+			title: "Done",
 			text: [
-				" Disconnect probe"],
-				rButton: ["OK"],
-			});
-		g_Probe = undefined;
+				"Job completed",
+				"successfully"],
+			rButton: ["OK"],
+		});
 		return;
 	}
-	if (g_Probe.pass == 2 || g_Probe.settings.style == "single")
-	{
-		// probing finished
-		var retract = g_Probe.settings["retract" + g_Probe.pass];
-		var feed = Math.max(Math.min(retract.feed, grblParams["$112"]), 10);
-		var gcode = "G21 G91\nG4 P0.4\n";
 
-		if (g_Probe.type == 0)
-		{
-			// z-probe
-			var zProbeThickness = g_PendantSettings.zProbeThickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
-			gcode += "G10 P0 L20 Z" + Number(zProbeThickness).toFixed(3);
-		}
-		else if (g_Probe.type == 1)
-		{
-			// reference tool - just remember the current Z
-			g_TloRefZ = probe.z;
-		}
-		else if (g_Probe.type == 2)
-		{
-			// new tool - adjust work Z
-			var delta = probe.z - g_TloRefZ;
-			g_TloRefZ = probe.z;
-			gcode += "G10 P0 L2 Z" + (laststatus.machine.position.offset.z + delta).toFixed(3);
-		}
-
-		gcode += "\n$J=Z" + retract.travel + " F" + feed.toFixed(0);
-		g_Probe = undefined;
-		console.log("PROBE2", gcode)
-		socket.emit('runJob', {
-			data: gcode,
-			isJob: false,
-			completedMsg: "Probe Complete",
-			fileName: ""
-		});
-	}
-	else
+	if (data.jobCompletedMsg.startsWith("Pendant Probe"))
 	{
-		// begin second pass
-		var feed = Math.max(Math.min(g_Probe.settings.retract1.feed, grblParams["$112"]), 10);
-		var gcode = "G21 G91\nG1 Z" + g_Probe.settings.retract1.travel + " F" + feed.toFixed(0);
-		feed = Math.max(Math.min(g_Probe.settings.descent2.feed, grblParams["$112"]), 10);
-		gcode += "\nG38.2 Z-" + g_Probe.settings.descent2.travel + " F" + feed.toFixed(0);
-		g_Probe.pass = 2;
-		console.log("PROBE3", gcode)
-		sendGcode(gcode);
+		// probing job
+		var probeType = Number(data.jobCompletedMsg[13]);
+		data.jobCompletedMsg = "";
+		if (!data.failed)
+		{
+			HandleProbeJobComplete(probeType, g_LastProbeZ);
+		}
+		g_LastProbeZ = undefined;
 	}
 }
 
@@ -378,11 +346,14 @@ var g_DialogRCallback;
 // dialog.text - an array of up to 3 lines
 //    if the line starts with CHAR_UNCHECKED, it shows a checkbox
 //    lines can be up to 18 characters
+//    lines starting with a checkbox or ^ are left-aligned
 // dialog.lButton [string, callback] -  optional left button
 //    if the button starts with CHAR_HOLD, it requires long hold
-//    the button is hidden unless all checkboxes are marked
+//    if the button starts with "!", the dialog waits for half second before it is dismissed (CHAR_HOLD is before ! if both are used)
 //    if the button text is "@", it shows no text but is automatically executed when all checkboxes are marked
+//    the button is hidden unless all checkboxes are marked
 // dialog.rButton [string, callback] - optional right button
+//    if the button starts with "!", the dialog waits for half second before it is dismissed
 //    if the button ends with CHAR_HOLD, it requires long hold
 // buttons are up to 14 characters each, but both combined should not exceed 16
 function ShowPendantDialog(dialog)
@@ -428,20 +399,20 @@ function PushSettings(pushRomSettings)
 	if (g_PendantSettings.displayUnits == "inches")
 	{
 		var str = "UNITS:I";
-		var rates = g_PendantSettings.wheelRatesIn;
-		for (var idx = 0; idx < rates.length; idx++)
+		var steps = g_PendantSettings.wheelStepsIn;
+		for (var idx = 0; idx < steps.length; idx++)
 		{
-			str += "|" + (rates[idx]*1000).toFixed(0);
+			str += "|" + (steps[idx]*1000).toFixed(0);
 		}
 		WritePort(str);
 	}
 	else
 	{
 		var str = "UNITS:M";
-		var rates = g_PendantSettings.wheelRatesMm;
-		for (var idx = 0; idx < rates.length; idx++)
+		var steps = g_PendantSettings.wheelStepsMm;
+		for (var idx = 0; idx < steps.length; idx++)
 		{
-			str += "|" + (rates[idx]*100).toFixed(0);
+			str += "|" + (steps[idx]*100).toFixed(0);
 		}
 		WritePort(str);
 	}
@@ -452,12 +423,21 @@ function PushSettings(pushRomSettings)
 	for (var idx = 1; idx <= 7; idx++)
 	{
 		var macro = g_PendantSettings["macro" + idx];
-		var hold = macro.hold;
-		if (hold)
+		str += "|";
+		if (macro.name != "")
 		{
-			flags |= 1 << (idx-1);
+			var hold = macro.hold;
+			if (hold)
+			{
+				flags |= 1 << (idx-1);
+			}
+			var label = macro.label.replaceAll('|', '_');
+			if (label == "")
+			{
+				label = "MACRO " + idx;
+			}
+			str += label;
 		}
-		str += "|" + macro.label.replaceAll('|', '_');
 	}
 	WritePort("MACROS:" + flags + str + "|");
 
@@ -477,6 +457,16 @@ function PushSettings(pushRomSettings)
 	}
 }
 
+// Issues feed hold, and then soft reset once Hold:0 is reached
+function SafeStop()
+{
+	if (!IsStableIdle())
+	{
+		socket.emit('serialInject', '!'); // feed hold
+		g_SafeStopPending = laststatus.comms.runStatus == "Idle" ? 2 : 1;
+	}
+}
+
 // Stops the current operation as gently as possible
 function SmartStop()
 {
@@ -484,31 +474,51 @@ function SmartStop()
 	{
 		socket.emit('stop', {stop: false, jog: true, abort: false});
 	}
-	else if (laststatus.comms.runStatus == "Run")
+	else if (laststatus.comms.runStatus == "Run" || g_ProbeJog != undefined)
 	{
-		// pause, wait for hold, then stop
-		socket.emit('stop', {stop: true, jog: false, abort: false});
+		// pause, wait for hold0, then stop
+		SafeStop();
 	}
 	else
 	{
-		// immediate abourt in all other cases
+		// immediate abort in all other cases
 		socket.emit('stop', {stop: false, jog: false, abort: true});
 	}
 }
 
-// Clamps the delta to keep the value within the safe range for the axis
-function ClampSafeAbsoluteMove(value, delta, axis, inches)
+// Returns true if value + delta is within the safe area
+function IsSafeAbsoluteMove(value, delta, axis, bInches)
+{
+	if (!g_PendantSettings.safeLimitsEnabled)
+	{
+		return true;
+	}
+
+	var limits = GetSafeLimits(axis);
+	var min = limits.min;
+	var max = limits.max;
+	if (min >= max) return false; // bad range
+	if (bInches)
+	{
+		min /= 25.4;
+		max /= 25.4;
+	}
+	return delta > 0 ? (value + delta <= max) : (value + delta >= min);
+}
+
+// Clamps value + delta to keep it within the safe range for the axis
+function ClampSafeAbsoluteMove(value, delta, axis, bInches)
 {
 	if (!g_PendantSettings.safeLimitsEnabled)
 	{
 		return value + delta;
 	}
 
-	var limits = g_PendantSettings["safeLimits" + axis];
+	var limits = GetSafeLimits(axis);
 	var min = limits.min;
 	var max = limits.max;
 	if (min >= max) return value; // bad range
-	if (inches)
+	if (bInches)
 	{
 		min /= 25.4;
 		max /= 25.4;
@@ -525,30 +535,145 @@ function ClampSafeAbsoluteMove(value, delta, axis, inches)
 	return value;
 }
 
-// Last known jog location in MCS. refreshed on idle, incremented by joystick. always in mm
-var g_JogLocation;
-var g_JogTimer;
-var g_JogJoystick = {X: 0, Y: 0}; // Last received joystick position
+// Jogging with the wheel
+var g_JogAxis; // 'X', 'Y' or 'Z'
+var g_JogStep;
+var g_bJogInches;
+var g_JogWLocation; // the last submitted target for g_JogAxis
+var g_JogWQueue; // number of queued steps along g_JogAxis
+var g_JogWTimer;
+var g_LastWheelMoveTime;
 
-function CancelJogXY()
+// Jogging with joystick
+var g_JogXYLocation; // last known joystick jog location in MCS. always in mm
+var g_JogXYTimer;
+var g_JogJoystick = {X: 0, Y: 0}; // last received joystick position
+var g_JogCancelPendingTime = undefined; // to cancel jog on next job complete
+
+// Called periodically to process the queue of wheel jog requests
+function ProcessJogQueue()
 {
-	g_JogLocation = undefined;
-	if (g_JogTimer != undefined)
+	if (g_JogWQueue == 0 && IsStableIdle())
 	{
-		clearInterval(g_JogTimer);
-		g_JogTimer = undefined;
+		clearInterval(g_JogWTimer);
+		g_JogWTimer = undefined;
+		g_JogAxis = undefined;
+		g_bJogInches = undefined;
+		g_JogWLocation = undefined;
+		g_JogWQueue = undefined;
+		return;
+	}
+
+	if (Date.now() - g_LastWheelMoveTime > WHEEL_JOG_STOP_TIME)
+	{
+		// wheel stopped, clear the queue
+		g_JogWQueue = 0;
+		return;
+	}
+
+	var step = Math.abs(g_JogStep) * (g_bJogInches ? 25.4 : 1); // jog step in mm
+	var feedT;
+	switch (g_JogAxis)
+	{
+		case "X": feedT = grblParams["$110"]; break;
+		case "Y": feedT = grblParams["$111"]; break;
+		case "Z": feedT = grblParams["$112"]; break;
+	}
+	var feed = Math.min(feedT, step * 6000); // limit feed to 100 steps per second
+
+	var maxDist = feedT * WHEEL_JOG_AHEAD_TIME / 60000; // travel distance to keep in the queue
+
+	var axisL = g_JogAxis.toLowerCase();
+	var current = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL]; // current absolute position
+	var dist = Math.abs(g_JogWLocation - current);
+
+	// determine how many steps from the queue can be processed in WHEEL_JOG_AHEAD_TIME
+	var count = 0;
+	for (; count < g_JogWQueue; count++)
+	{
+		if (dist > 0.01 && dist + step > maxDist)
+		{
+			break; // have enough for WHEEL_JOG_AHEAD_TIME
+		}
+		dist += step;
+	}
+
+	if (count > 0)
+	{
+		// determine the target location
+		var absValue = g_JogWLocation;
+		if (g_bJogInches) { absValue /= 25.4; }
+
+		var delta = 0;
+		for (var i = 0; i < count; i++)
+		{
+			if (IsSafeAbsoluteMove(absValue, delta + g_JogStep, g_JogAxis, g_bJogInches))
+			{
+				delta += g_JogStep;
+			}
+			else
+			{
+				break;
+			}
+		}
+		g_JogWQueue -= count;
+
+		if (delta != 0)
+		{
+			absValue += delta;
+			// absolute move in machine space, inches or mm
+			var gcode = "$J=G90 G53 " + (g_bJogInches ? "G20 " : "G21 ") + g_JogAxis + absValue.toFixed(3) + " F" + feed.toFixed(0);
+			sendGcode(gcode);
+			g_JogWLocation = g_bJogInches ? absValue * 25.4 : absValue;
+		}
 	}
 }
 
-function QueueXYJog(joyX, joyY, dt)
+// Begins jogging with the joystick
+function BeginJogXY()
 {
+	g_JogXYLocation =
+	{
+		X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
+		Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
+	};
+	// fill the queue with tiny jogs
+	for (var i = 0; i < 20; i++)
+	{
+		var speed = (i+5)/25; // gradually increase the speed
+		QueueJogXY(g_JogJoystick.X*speed, g_JogJoystick.Y*speed, 0.02);
+	}
+}
+
+// Cancels jogging in the joystick
+function CancelJogXY()
+{
+	g_JogXYLocation = undefined;
+	if (g_JogXYTimer != undefined)
+	{
+		clearInterval(g_JogXYTimer);
+		g_JogXYTimer = undefined;
+	}
+}
+
+// Queues a jog increment. dt - time duration in seconds
+function QueueJogXY(joyX, joyY, dt)
+{
+	if (joyX == 0 && joyY == 0)
+	{
+		return;
+	}
 	var feedXY = grblParams["$110"] / 60; // mm/sec
 
+	// normalize joyX and joyY from 20x20 square to the unit circle
+	var slope = Math.abs(joyX) < Math.abs(joyY) ? joyX/joyY : joyY/joyX;
+	var maxXY = Math.sqrt(slope*slope + 1) * JOYSTICK_STEPS;
+
 	// requested move in mm
-	var newX = ClampSafeAbsoluteMove(g_JogLocation.X, joyX * feedXY * dt / 10, 'X', false);
-	var newY = ClampSafeAbsoluteMove(g_JogLocation.Y, joyY * feedXY * dt / 10, 'Y', false);
-	var dx = newX - g_JogLocation.X;
-	var dy = newY - g_JogLocation.Y;
+	var newX = ClampSafeAbsoluteMove(g_JogXYLocation.X, joyX * feedXY * dt / maxXY, 'X', false);
+	var newY = ClampSafeAbsoluteMove(g_JogXYLocation.Y, joyY * feedXY * dt / maxXY, 'Y', false);
+	var dx = newX - g_JogXYLocation.X;
+	var dy = newY - g_JogXYLocation.Y;
 
 	if (dx != 0 || dy != 0)
 	{
@@ -558,8 +683,9 @@ function QueueXYJog(joyX, joyY, dt)
 		var gcode = "$J=G53 G90 G21" + " X" + newX.toFixed(3) + " Y" + newY.toFixed(3) + " F" + feed.toFixed(0);
 		sendGcode(gcode);
 	}
-	g_JogLocation.X = newX;
-	g_JogLocation.Y = newY;
+	g_JogXYLocation.X = newX;
+	g_JogXYLocation.Y = newY;
+
 }
 
 // Handles the jog commands from the pendant
@@ -596,29 +722,29 @@ function HandleJogCommand(command)
 			newValue = ClampSafeAbsoluteMove(globalValue, -globalValue, axis, false);
 		}
 
-		var feed;
+		var feedT;
 		switch (axis)
 		{
-			case "X": feed = grblParams["$110"]; break;
-			case "Y": feed = grblParams["$111"]; break;
-			case "Z": feed = grblParams["$112"]; break;
+			case "X": feedT = grblParams["$110"]; break;
+			case "Y": feedT = grblParams["$111"]; break;
+			case "Z": feedT = grblParams["$112"]; break;
 		}
 
 		// absolute move, work or machine, mm
 		// use max speed allowed by the axis
-		var gcode = "$J=G90 G21 " + (work ? "" : "G53 ") + axis + newValue.toFixed(3) + " F" + feed;
+		var gcode = "$J=G90 G21 " + (work ? "" : "G53 ") + axis + newValue.toFixed(3) + " F" + feedT;
 		sendGcode(gcode);
 		return;
 	}
 
-	if (command[0] == 'R')
+	if (command[0] == 'A')
 	{
-		// round to nearest
+		// align to nearest
 		if (laststatus.comms.runStatus != "Idle") { return; }
 
 		var units = command[1]; // M or I
 		if (units != 'I' && units != 'M') { return; }
-		var inches = units == 'I';
+		var bInches = units == 'I';
 
 		var space = command[2]; // L or G
 		if (space != 'L' && space != 'G') { return; }
@@ -628,43 +754,39 @@ function HandleJogCommand(command)
 		if (axis < 'X' || axis > 'Z') { return; }
 		var axisL = axis.toLowerCase();
 
-		var rate = Number(command.substring(4));
+		var step = Number(command.substring(4));
 
 		var pos = laststatus.machine.position;
 		var globalValue = pos.work[axisL] + pos.offset[axisL];
-		if (inches) { globalValue /= 25.4; }
+		if (bInches) { globalValue /= 25.4; }
 
 		var oldValue = globalValue;
 		if (work)
 		{
-			oldValue -= inches ? (pos.offset[axisL] / 25.4) : pos.offset[axisL];
+			oldValue -= bInches ? (pos.offset[axisL] / 25.4) : pos.offset[axisL];
 		}
 
-		var roundedValue = Math.round(oldValue / rate) * rate;
-		var delta = roundedValue - oldValue;
-		var newGlobalValue = ClampSafeAbsoluteMove(globalValue, delta, axis, inches);
-		if (Math.abs(globalValue + delta - newGlobalValue) > 0.00001)
+		var roundedValue = Math.round(oldValue / step) * step;
+		if (!IsSafeAbsoluteMove(globalValue, roundedValue - oldValue, axis, bInches))
 		{
 			// rounded position not safe, try rounding in the other direction
-			roundedValue = (delta < 0 ? Math.ceil(oldValue / rate) : Math.floor (oldValue / rate)) * rate;
-			delta = roundedValue - oldValue;
-			newGlobalValue = ClampSafeAbsoluteMove(globalValue, delta, axis, inches);
-			if (Math.abs(globalValue + delta - newGlobalValue) > 0.00001)
+			roundedValue = (roundedValue  < oldValue ? Math.ceil(oldValue / step) : Math.floor(oldValue / step)) * step;
+			if (!IsSafeAbsoluteMove(globalValue, roundedValue - oldValue, axis, bInches))
 			{
 				return;
 			}
 		}
 
-		var feed;
+		var feedT;
 		switch (axis)
 		{
-			case "X": feed = grblParams["$110"]; break;
-			case "Y": feed = grblParams["$111"]; break;
-			case "Z": feed = grblParams["$112"]; break;
+			case "X": feedT = grblParams["$110"]; break;
+			case "Y": feedT = grblParams["$111"]; break;
+			case "Z": feedT = grblParams["$112"]; break;
 		}
 
 		// absolute move, work or machine, inches or mm
-		var gcode = "$J=G90 " + (work ? "" : "G53 ") + (inches ? "G20 " : "G21 ") + axis + roundedValue.toFixed(3) + " F" + feed;
+		var gcode = "$J=G90 " + (work ? "" : "G53 ") + (bInches ? "G20 " : "G21 ") + axis + roundedValue.toFixed(3) + " F" + feedT;
 		sendGcode(gcode);
 		return;
 	}
@@ -672,45 +794,52 @@ function HandleJogCommand(command)
 	if (command[0] == 'W')
 	{
 		// hand wheel
-		if (g_JogLocation == undefined)
-		{
-			g_JogLocation =
-			{
-				X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
-				Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
-				Z: laststatus.machine.position.work.z + laststatus.machine.position.offset.z,
-			};
-		}
 		var units = command[1]; // M or I
 		if (units != 'I' && units != 'M') { return; }
 		var inches = units == 'I';
 
 		var axis = command[2]; // X/Y/Z
 		if (axis < 'X' || axis > 'Z') { return; }
+		var axisL = axis.toLowerCase();
 
 		var mul = command.indexOf('*');
 		var count = Number(command.substring(3, mul));
-		var rate = Number(command.substring(mul + 1));
-
-		var absValue = g_JogLocation[axis];
-		if (inches) { absValue /= 25.4; }
-
-		var newValue = ClampSafeAbsoluteMove(absValue, count * rate, axis, inches);
-		if (newValue == absValue) { return; }
-
-		g_JogLocation[axis] = inches ? (newValue * 25.4) : newValue;
-
-		var feed;
-		switch (axis)
+		var step = Number(command.substring(mul + 1));
+		if (count < 0)
 		{
-			case "X": feed = grblParams["$110"]; break;
-			case "Y": feed = grblParams["$111"]; break;
-			case "Z": feed = grblParams["$112"]; break;
+			count = -count;
+			step = -step;
 		}
 
-		// absolute move in machine space, inches or mm
-		var gcode = "$J=G90 G53 " + (inches ? "G20 " : "G21 ") + axis + newValue.toFixed(3) + " F" + feed;
-		sendGcode(gcode);
+		if (axis != g_JogAxis || inches != g_bJogInches || step != g_JogStep)
+		{
+			// axis or unit is switched, clear everything
+			g_JogWQueue = 0;
+			g_JogStep = step;
+			g_JogAxis = axis;
+			g_bJogInches = inches;
+			g_JogWLocation = undefined;
+		}
+		g_JogWQueue += count;
+
+		g_LastWheelMoveTime = Date.now();
+
+		if (g_JogWLocation == undefined)
+		{
+			g_JogWLocation = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL];
+		}
+
+		if (g_JogWTimer == undefined)
+		{
+			if (IsStableIdle())
+			{
+				g_LastBusyTime = Date.now(); // force state as busy
+				ProcessJogQueue();
+			}
+			g_JogWTimer = setInterval(ProcessJogQueue, 100);
+		}
+
+		return;
 	}
 
 	if (command.startsWith("JXY"))
@@ -721,43 +850,49 @@ function HandleJogCommand(command)
 		if (xy[0] == 0 && xy[1] == 0)
 		{
 			// joystick is released, stop immediately
-			if (g_JogLocation != undefined)
+			if (g_JogXYLocation != undefined && !IsStableIdle())
 			{
 				socket.emit('stop', {stop: false, jog: true, abort: false});
+				if (laststatus.comms.runStatus != "Idle")
+				{
+					g_JogCancelPendingTime = Date.now();
+				}
 			}
 			CancelJogXY();
 			return;
 		}
 
-		if (g_JogLocation == undefined)
+		if (g_JogXYTimer == undefined)
 		{
-			g_JogLocation =
+			if (IsStableIdle() && (xy[0] * xy[0] + xy[1] * xy[1]) * 4 > JOYSTICK_STEPS * JOYSTICK_STEPS )
 			{
-				X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
-				Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
-				Z: laststatus.machine.position.work.z + laststatus.machine.position.offset.z,
-			};
-		}
-
-		if (g_JogTimer == undefined)
-		{
-			// fill queue with jogs
-			for (var i = 0; i < 15; i++)
-			{
-				var speed = (i+5)/20; // gradually increase the speed
-				QueueXYJog(g_JogJoystick.X*speed, g_JogJoystick.Y*speed, 0.02);
+				BeginJogXY();
 			}
-
-			g_JogTimer = setInterval(function()
+			g_JogXYTime = g_JogXYLocation == undefined ? undefined : Date.now();
+			g_JogXYTimer = setInterval(function()
 			{
-				if (g_JogLocation != undefined)
+				if (g_JogXYLocation == undefined)
 				{
-					QueueXYJog(g_JogJoystick.X, g_JogJoystick.Y, 0.1);
+					if (laststatus.comms.runStatus == "Idle")
+					{
+						BeginJogXY();
+						g_JogXYTime = Date.now();
+					}
+				}
+				else
+				{
+					var t = Date.now();
+					QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, (t - g_JogXYTime) / 1000);
+					g_JogXYTime = t;
 				}
 			}, 100);
 		}
+
+		return;
 	}
 }
+
+var g_JogXYTime;
 
 // Shows the job menu
 function HandleJobMenu()
@@ -776,9 +911,9 @@ function HandleJobMenu()
 	{
 		text = g_PendantSettings.jobChecklist.split('|').map(x => CHAR_UNCHECKED + " " + x.substring(0, 16)).slice(0, 3);
 		ShowPendantDialog({
-			title: " = Job Checklist =",
+			title: "Job Checklist",
 			text: text,
-			lButton: ["@", function () { WritePort("JOBSCREEN"); }],
+			lButton: ["!@", function () { WritePort("JOBSCREEN"); }],
 			rButton: ["Back"],
 		});
 	}
@@ -820,11 +955,80 @@ function HandleJobCommand(command)
 	}
 }
 
-// Issues feed hold, and then soft reset once Hold:0 is reached
-function SafeStop()
+function SetupProbeMode(probeType)
 {
-	socket.emit('serialInject', '!'); // feed hold
-	g_bSafeStopPending = true;
+	// validate probe settings
+	var settings  = probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe;
+	var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
+	if ((probeType != 0 || zProbeThickness >= 0) &&
+		settings.seek1.travel > 0 && settings.seek1.feed &&
+		settings.retract1.travel > 0 && settings.retract1.feed)
+	{
+		if (settings.style == "single")
+		{
+			return;
+		}
+		if (settings.seek2.travel > 0 && settings.seek2.feed &&
+			settings.retract2.travel > 0 && settings.retract2.feed > 0)
+		{
+			return;
+		}
+	}
+	ShowPendantDialog({
+		title: "Probe",
+		text: [
+			"The probe setings",
+			"are invalid."],
+		rButton: ["OK"],
+	});
+}
+
+// Handles a successful probe job
+function HandleProbeJobComplete(probeType, probeZ)
+{
+	var showZ = false;
+	if (probeType == 0 && g_PendantSettings.zProbe.useProbeResult)
+	{
+		// z-probe
+		var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
+		var gcode = "G10 P0 L2 Z" + (probeZ - zProbeThickness).toFixed(3);
+		sendGcode(gcode);
+		showZ = true;
+	}
+	else if (probeType == 1)
+	{
+		// reference tool - just remember the current Z
+		g_TloRefZ = probeZ;
+		showZ = true;
+	}
+	else if (probeType == 2)
+	{
+		// new tool - adjust work Z
+		var delta = probeZ - g_TloRefZ;
+		g_TloRefZ = probeZ;
+		var gcode = "G10 P0 L2 Z" + (laststatus.machine.position.offset.z + delta).toFixed(3);
+		sendGcode(gcode);
+		showZ = true;
+	}
+
+	var text = [];
+	if (showZ)
+	{
+		text.push("^ Z = " + probeZ + " mm");
+	}
+	text.push("Disconnect probe");
+
+	ShowPendantDialog({
+		title: "Probe Complete",
+		text: text,
+		rButton: ["OK", function()
+		{
+			if (Metro.dialog.isOpen('#completeMsgModal'))
+			{
+				Metro.dialog.close('#completeMsgModal');
+			}
+		}],
+	});
 }
 
 // Handles the Z probe commands
@@ -832,8 +1036,8 @@ function HandleProbeCommand(command)
 {
 	if (command.startsWith("ENTER"))
 	{
-		g_Probe = undefined;
 		var probeType = Number(command[5]);
+		g_ProbeZDownFeed = Math.min(Math.max((probeType == 1 || probeType == 2) ? g_PendantSettings.toolProbe.downSpeed : g_PendantSettings.zProbe.downSpeed, 10), 100);
 		if (probeType == 0 && g_PendantSettings.zProbe.style == "default")
 		{
 			if (!Metro.dialog.isOpen('#xyzProbeWindow'))
@@ -844,47 +1048,20 @@ function HandleProbeCommand(command)
 		}
 		else
 		{
-			// validate settings
 			if (probeType != 0 && !laststatus.machine.modals.homedRecently)
 			{
 				ShowPendantDialog({
-					title: "=== Tool Probe ===",
+					title: "Tool Probe",
 					text: [
-						" Machine has to",
-						" be homed before",
+						"Machine has to",
+						"be homed before",
 						"using tool probe."],
-					rButton: ["OK"],
-				});
+						lButton: ["!IGNORE", function() { WritePort("PROBESCREEN:" + probeType); SetupProbeMode(probeType); }],
+						rButton: ["OK"],
+					});
 				return;
 			}
-			g_Probe = {
-				type: probeType,
-				settings: (probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe),
-				pass: 0
-			};
-			var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
-			if ((probeType != 0 || zProbeThickness >= 0) &&
-				g_Probe.settings.descent1.travel > 0 && g_Probe.settings.descent1.feed &&
-				g_Probe.settings.retract1.travel > 0 && g_Probe.settings.retract1.feed)
-			{
-				if (g_Probe.settings.style == "single")
-				{
-					return;
-				}
-				if (g_Probe.settings.descent2.travel > 0 && g_Probe.settings.descent2.feed &&
-					g_Probe.settings.retract2.travel > 0 && g_Probe.settings.retract2.feed > 0)
-				{
-					return;
-				}
-			}
-			g_Probe = undefined;
-			ShowPendantDialog({
-				title: "===== Probe =======",
-				text: [
-					"The probe setings",
-					"   are invalid."],
-				rButton: ["OK"],
-			});
+			SetupProbeMode(probeType);
 			return;
 		}
 	}
@@ -903,51 +1080,92 @@ function HandleProbeCommand(command)
 			resetJogModeAfterProbe();
 			Metro.dialog.close('#xyzProbeWindow');
 		}
-		g_Probe = undefined;
 		return;
 	}
 	else if (command == "Z+")
 	{
+		if (laststatus.comms.runStatus != "Idle")
+		{
+			return;
+		}
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
-			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z < g_PendantSettings.safeLimitsZ.max)
+			var limits = GetSafeLimits('Z');
+			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z < limits.max)
 			{
-				var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.max.toFixed(3) + " F" + Number(grblParams["$112"]).toFixed(0);
+				gcode = "$J=G53 G21 G90 Z" + limits.max.toFixed(3) + " F" + grblParams["$112"];
 				sendGcode(gcode);
 			}
 		}
 		else
 		{
-				var gcode = "$J=G21 G91 Z100" + " F" + Number(grblParams["$112"]).toFixed(0);
-				sendGcode(gcode);
+			var gcode = "$J=G21 G91 Z100" + " F" + grblParams["$112"];
+			sendGcode(gcode);
 		}
+		g_ProbeJog = 1;
 	}
 	else if (command == "Z-")
 	{
+		if (laststatus.comms.runStatus != "Idle" || laststatus.machine.inputs.includes('P'))
+		{
+			// not idle or the probe is touching. can't go any lower
+			return;
+		}
+		var feed = grblParams["$112"] * g_ProbeZDownFeed / 100;
+		var gcode;
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
-			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z > g_PendantSettings.safeLimitsZ.min)
+			var limits = GetSafeLimits('Z');
+			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z > limits.min)
 			{
-				var feed = Math.min(Math.max(g_Probe.settings.downSpeed, 10), 100);
-				feed = grblParams["$112"] * feed / 100;
-				var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.safeLimitsZ.min.toFixed(3) + " F" + feed.toFixed(0);
-				sendGcode(gcode);
-				g_ProbeJogDown = true;
+				if (SAFE_PROBE_JOG)
+				{
+					gcode = "G38.3 G21 G90 Z" + (limits.min - laststatus.machine.position.offset.z).toFixed(3) + " F" + feed.toFixed(0);
+				}
+				else
+				{
+					gcode = "$J=G53 G21 G90 Z" + limits.min.toFixed(3) + " F" + feed.toFixed(0);
+				}
 			}
 		}
 		else
 		{
-			var feed = Math.min(Math.max(g_Probe.settings.downSpeed, 10), 100);
-			feed = grblParams["$112"] * feed / 100;
-			var gcode = "$J=G21 G91 Z-100" + " F" + feed.toFixed(0);
-			sendGcode(gcode);
-			g_ProbeJogDown = true;
+			if (SAFE_PROBE_JOG)
+			{
+				gcode = "G38.3 G21 G91 Z-100" + " F" + feed.toFixed(0);
+			}
+			else
+			{
+				gcode = "$J=G21 G91 Z-100" + " F" + feed.toFixed(0);
+			}
+		}
+		sendGcode(gcode);
+		g_ProbeJog = -1;
+		if (SAFE_PROBE_JOG)
+		{
+			socket.off('prbResult');
+			socket.on('prbResult', function (probe)
+			{
+				// clear the probe jog if the probe is touched
+				g_ProbeJog = undefined;
+				socket.off('prbResult');
+			});
 		}
 	}
 	else if (command == "Z=")
 	{
-		socket.emit('stop', {stop: false, jog: true, abort: false});
-		g_ProbeJogDown = false;
+		if (g_ProbeJog != undefined)
+		{
+			if (SAFE_PROBE_JOG)
+			{
+				SmartStop();
+			}
+			else
+			{
+				socket.emit('stop', {stop: false, jog: true, abort: false});
+			}
+			g_ProbeJog = undefined;
+		}
 	}
 	else if (command.startsWith("START"))
 	{
@@ -961,28 +1179,206 @@ function HandleProbeCommand(command)
 				return;
 			}
 		}
-		else if (laststatus.comms.runStatus == "Idle" && g_Probe == undefined)
+		else if (laststatus.comms.runStatus == "Idle")
 		{
-			g_Probe = {
-				type: probeType,
-				settings: (probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe),
-				pass: 1
-			};
-			var feed = Math.max(Math.min(g_Probe.settings.descent1.feed, grblParams["$112"]), 10);
-			var gcode = "G38.2 G21 G91 Z-" + g_Probe.settings.descent1.travel + " F" + feed.toFixed(0);
-			console.log("PROBE1", gcode)
-			sendGcode(gcode);
+			// initiate seek 1
+			var settings = probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe;
+			var feed = Math.max(Math.min(settings.seek1.feed, grblParams["$112"]), 10);
+			var gcode = "G38.3 G21 G91 Z-" + settings.seek1.travel.toFixed(3) + " F" + feed.toFixed(0);
+			g_LastProbeZ = undefined;
+			socket.off('prbResult');
+
+			socket.emit('runJob', {
+				data: gcode,
+				isJob: false,
+				completedMsg: "",
+				fileName: ""
+			});
+
+			var pass = 1;
+			socket.on('prbResult', function(probe)
+			{
+				if (probe.state == 0)
+				{
+					ShowPendantDialog({
+						title: "Probe Failed",
+						text: [
+							"Disconnect probe"],
+							rButton: ["OK"],
+						});
+					socket.off('prbResult');
+					return;
+				}
+
+				if (pass == 1)
+				{
+					// retract 1
+					pass = 2;
+					var gcode = "G4 P0.4"; // wait a bit
+					if (probeType == 0 && g_PendantSettings.zProbe.style == "single" && !g_PendantSettings.zProbe.useProbeResult)
+					{
+						var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
+						gcode += "\nG10 G21 P0 L20 Z" + zProbeThickness.toFixed(3);
+					}
+					var maxZ = GetSafeLimits('Z').max;
+					var travel = settings.retract1.travel;
+					if (settings.style == "single" && g_PendantSettings.safeLimitsEnabled)
+					{
+						travel = Math.min(travel, Math.max(maxZ - probe.z, 0));
+					}
+					var feed = Math.max(Math.min(settings.retract1.feed, grblParams["$112"]), 10);
+					gcode += "\n$J=G21 G91 Z" + travel.toFixed(3) + " F" + feed.toFixed(0);
+
+					if (settings.style == "dual")
+					{
+						// seek 2
+						feed = Math.max(Math.min(settings.seek2.feed, grblParams["$112"]), 10);
+						gcode += "\nG38.3 G21 G91 Z-" + settings.seek2.travel.toFixed(3) + " F" + feed.toFixed(0);
+						socket.emit('runJob', {
+							data: gcode,
+							isJob: false,
+							completedMsg: "",
+							fileName: ""
+						});
+					}
+					else
+					{
+						// finished (single pass)
+						g_LastProbeZ = probe.z;
+						socket.emit('runJob', {
+							data: gcode,
+							isJob: false,
+							completedMsg: "Pendant Probe" + probeType,
+							fileName: ""
+						});
+						socket.off('prbResult');
+					}
+				}
+				else if (pass == 2)
+				{
+					// retract 2
+					pass = 3;
+					var gcode = "G4 P0.4"; // wait a bit
+					if (probeType == 0 && !g_PendantSettings.zProbe.useProbeResult)
+					{
+						var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
+						gcode += "\nG10 G21 P0 L20 Z" + zProbeThickness.toFixed(3);
+					}
+					var maxZ = GetSafeLimits('Z').max;
+					var travel = settings.retract2.travel;
+					if (g_PendantSettings.safeLimitsEnabled)
+					{
+						travel = Math.min(travel, Math.max(maxZ - probe.z, 0));
+					}
+					var feed = Math.max(Math.min(settings.retract2.feed, grblParams["$112"]), 10);
+					gcode += "\n$J=G21 G91 Z" + travel.toFixed(3) + " F" + feed.toFixed(0);
+
+					// finished (dual pass)
+					g_LastProbeZ = probe.z;
+					socket.emit('runJob', {
+						data: gcode,
+						isJob: false,
+						completedMsg: "Pendant Probe" + probeType,
+						fileName: ""
+					});
+					socket.off('prbResult');
+				}
+			});
 		}
 	}
 	else if (command == "GOTOSENSOR")
 	{
 		// go to tool probe
-		var feedZ = Number(grblParams["$112"]);
-		var feedXY = Number(grblParams["$110"]);
-		var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.toolProbe.location.Z.toFixed(3) + " F" + feedZ.toFixed(0);
-		gcode += "\n$J=G53 G21 G90 X" + g_PendantSettings.toolProbe.location.X.toFixed(3) + " Y" + g_PendantSettings.toolProbe.location.Y.toFixed(3) + " F" + feedXY.toFixed(0);
+		var feedZ = grblParams["$112"];
+		var feedXY = grblParams["$110"];
+		var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.toolProbe.location.Z.toFixed(3) + " F" + feedZ;
+		gcode += "\n$J=G53 G21 G90 X" + g_PendantSettings.toolProbe.location.X.toFixed(3) + " Y" + g_PendantSettings.toolProbe.location.Y.toFixed(3) + " F" + feedXY;
 		sendGcode(gcode);
 	}
+}
+
+var g_TargetFeedRate;
+var g_TargetSpeedRate;
+var g_FeedSpeedRateTimer;
+var g_FeedSpeedStatusCounter;
+
+// A callback to periodically update the feed and speed rate
+function FeedSpeedRateUpdate()
+{
+	if (g_FeedSpeedStatusCounter == g_StatusCounter)
+	{
+		return; // no update yet
+	}
+	g_FeedSpeedStatusCounter = g_StatusCounter;
+	if (g_TargetFeedRate == 100)
+	{
+		socket.emit('serialInject', String.fromCharCode(0x90)); // set to 100
+		socket.emit('serialInject', "?");
+		g_TargetFeedRate = undefined;
+	}
+	else if (g_TargetFeedRate != undefined)
+	{
+		var delta = g_TargetFeedRate - laststatus.machine.overrides.feedOverride;
+		if (delta != 0)
+		{
+			if (delta >= 10)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x91)); // increase by 10
+			}
+			else if (delta > 0)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x93)); // increase by 1
+			}
+			else if (delta <= -10)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x92)); // decrease by 10
+			}
+			else if (delta < 0)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x94)); // decrease by 1
+			}
+			socket.emit('serialInject', "?");
+			return;
+		}
+		g_TargetFeedRate = undefined;
+	}
+
+	if (g_TargetSpeedRate  == 100)
+	{
+		socket.emit('serialInject', String.fromCharCode(0x99)); // set to 100
+		socket.emit('serialInject', "?");
+		g_TargetSpeedRate  = undefined;
+	}
+	else if (g_TargetSpeedRate != undefined)
+	{
+		var delta = g_TargetSpeedRate - laststatus.machine.overrides.spindleOverride;
+		if (delta != 0)
+		{
+			if (delta >= 10)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x9A)); // increase by 10
+			}
+			else if (delta > 0)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x9C)); // increase by 1
+			}
+			else if (delta <= -10)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x9B)); // decrease by 10
+			}
+			else if (delta < 0)
+			{
+				socket.emit('serialInject', String.fromCharCode(0x9D)); // decrease by 1
+			}
+			socket.emit('serialInject', "?");
+			return;
+		}
+		g_TargetSpeedRate = undefined;
+	}
+
+	clearInterval(g_FeedSpeedRateTimer);
+	g_FeedSpeedRateTimer = undefined;
+	g_FeedSpeedStatusCounter = undefined;
 }
 
 // Handles the communication from the pendant
@@ -1130,11 +1526,11 @@ function PendantComHandler(data)
 		if (laststatus.machine.modals.homedRecently)
 		{
 			ShowPendantDialog({
-				title: "==== Home XYZ ====",
+				title: "Home XYZ",
 				text: [
 					"Machine is already",
-					"      homed.",
-					"   Home anyway?"],
+					"homed.",
+					"Home anyway?"],
 				lButton: ["No"],
 				rButton: ["Yes", home],
 			});
@@ -1159,15 +1555,29 @@ function PendantComHandler(data)
 	if (data.startsWith("FEED:"))
 	{
 		if (COM_LOG_LEVEL >= 1) { console.log("#FEED#"); }
-		var val = Number(data.substring(5)) * 10;
+		var val = Number(data.substring(5)) * WHEEL_OVERRIDE_STEP;
 		if (val == 0)
 		{
-			feedOverride(100);
+			g_TargetFeedRate = 100;
 		}
 		else
 		{
-			val = Math.min(Math.max(val + laststatus.machine.overrides.feedOverride, 10), 200);
-			feedOverride(val);
+			var current = g_TargetFeedRate != undefined ? g_TargetFeedRate : laststatus.machine.overrides.feedOverride;
+			if (val > 0)
+			{
+				val = Math.ceil((val + current) / WHEEL_OVERRIDE_STEP) * WHEEL_OVERRIDE_STEP;
+			}
+			else
+			{
+				val = Math.floor((val + current) / WHEEL_OVERRIDE_STEP) * WHEEL_OVERRIDE_STEP;
+			}
+			val = Math.min(Math.max(val, 10), 200);
+			g_TargetFeedRate = val;
+		}
+		if (g_FeedSpeedRateTimer == undefined)
+		{
+			FeedSpeedRateUpdate();
+			g_FeedSpeedRateTimer = setInterval(FeedSpeedRateUpdate, 50);
 		}
 		return;
 	}
@@ -1175,15 +1585,29 @@ function PendantComHandler(data)
 	if (data.startsWith("SPEED:"))
 	{
 		if (COM_LOG_LEVEL >= 1) { console.log("#SPEED#"); }
-		var val = Number(data.substring(6)) * 10;
+		var val = Number(data.substring(6)) * WHEEL_OVERRIDE_STEP;
 		if (val == 0)
 		{
-			spindleOverride(100);
+			g_TargetSpeedRate = 100;
 		}
 		else
 		{
-			val = Math.min(Math.max(val + laststatus.machine.overrides.spindleOverride, 10), 200);
-			spindleOverride(val);
+			var current = g_TargetSpeedRate != undefined ? g_TargetSpeedRate : laststatus.machine.overrides.spindleOverride;
+			if (val > 0)
+			{
+				val = Math.ceil((val + current) / WHEEL_OVERRIDE_STEP) * WHEEL_OVERRIDE_STEP;
+			}
+			else
+			{
+				val = Math.floor((val + current) / WHEEL_OVERRIDE_STEP) * WHEEL_OVERRIDE_STEP;
+			}
+			val = Math.min(Math.max(val, 10), 200);
+			g_TargetSpeedRate = val;
+		}
+		if (g_FeedSpeedRateTimer == undefined)
+		{
+			FeedSpeedRateUpdate();
+			g_FeedSpeedRateTimer = setInterval(FeedSpeedRateUpdate, 50);
 		}
 		return;
 	}
@@ -1308,12 +1732,12 @@ function TryComHandler(data)
 			g_PendantPort.on('close', DisconnectPendant);
 			socket.on('status', HandleStatus);
 			socket._callbacks["$jobComplete"].splice(0,0, HandleJobComplete);
-			socket.on('prbResult', HandleProbeResult);
 
 			g_CurrentTryPort = undefined;
 			g_CurrentTryParser = undefined;
 			g_CurrentTryTimer = undefined;
 			g_ComPorts = undefined;
+			g_StatusCounter = 0;
 
 			localStorage.setItem("PendantPort", g_PendantPort.path);
 			HandleHandshake();
@@ -1394,14 +1818,17 @@ window.ConnectPendant = function()
 		$('#ConnectPendant').addClass("disabled");
 		$('#DisconnectPendant').addClass("disabled");
 		printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Looking for pendant...</span>")
-		g_ComPorts = laststatus.comms.interfaces.ports.map(x => x.path);
-		var lastPort = localStorage.getItem("PendantPort");
-		if (lastPort)
-		{
-			// sort so the lastPort is first in the list
-			g_ComPorts.sort((a, b) => { if (a == lastPort) { return -1; } if (b == lastPort) { return 1; } return 0; });
-		}
-		TryNextPort();
+		SerialPort.list().then(function(ports)
+			{
+				g_ComPorts = ports.map(x => x.path);
+				var lastPort = localStorage.getItem("PendantPort");
+				if (lastPort)
+				{
+					// sort so the lastPort is first in the list
+					g_ComPorts.sort((a, b) => { if (a == lastPort) { return -1; } if (b == lastPort) { return 1; } return 0; });
+				}
+				TryNextPort();
+			});
 	}
 }
 
@@ -1421,7 +1848,7 @@ window.DisconnectPendant = function()
 	$('#DisconnectPendant').addClass("disabled");
 	socket.off('status', HandleStatus);
 	socket.off('jobComplete', HandleJobComplete);
-	socket.off('prbResult', HandleProbeResult);
+	socket.off('prbResult');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1646,6 +2073,7 @@ function UpdateCalibration()
 // Settings
 
 window.g_SettingsTabIndex = 0; // current settings tab
+window.g_bZThicknessValid = false; // if the probe thickness value was modified
 
 // HTML for the body of the settings dialog
 // Note: intially this was wrapped in a form, however a button in the form causes the app to reset. Seems to work without a form anyway
@@ -1666,7 +2094,7 @@ const g_SettingsContent = `
 
 <div id="PendantTab12" class="row mb-2">
   <label class="cell-sm-4 pt-1" title="Enter text to display on the pendant boot screen.
-This setting can only be edited while the pendant is connected.">Pendant name (up to 18 chars)</label>
+This setting can only be edited while the pendant is connected.">Pendant Name (up to 18 chars)</label>
   <div class="cell-sm-6">
     <input id="PendantName" data-role="input" data-clear-button="false" data-editable="true" />
   </div>
@@ -1682,23 +2110,23 @@ This setting can only be edited while the pendant is connected.">Pendant name (u
 </div>
 
 <div id="PendantTab14" class="row mb-2">
-  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Rate</label>
+  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Steps</label>
   <div class="cell-sm-6">
-    <input id="PendantWheelRatesMm" data-role="input" data-clear-button="false" data-append="mm/click" data-editable="true" />
+    <input id="PendantWheelStepsMm" data-role="input" data-clear-button="false" data-append="mm/click" data-editable="true" />
   </div>
 </div>
 
 <div id="PendantTab15" class="row mb-2">
-  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Rate</label>
+  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Steps</label>
   <div class="cell-sm-6">
-    <input id="PendantWheelRatesIn" data-role="input" data-clear-button="false" data-append="inches/click" data-editable="true" />
+    <input id="PendantWheelStepsIn" data-role="input" data-clear-button="false" data-append="inches/click" data-editable="true" />
   </div>
 </div>
 
 <div id="PendantTab16" class="row">
   <label class="cell-sm-4" title="Check if you want the spindle to automatically stop when a job is paused.
 This is done by triggering the door event. Resuming the job will automatically start the spindle, wait 4 seconds, then resume the motion.
-If unchecked, you can still stop the spindle from the pendant using the RPM0 button.">Stop spindle on pause</label>
+If unchecked, you can still stop the spindle from the pendant using the RPM0 button.">Stop Spindle on Pause</label>
   <div class="cell-sm-6">
     <input id="PendantPauseSpindle" type="checkbox" data-role="checkbox" data-style="2" checked />
   </div>
@@ -1713,13 +2141,16 @@ The names are separated by |. Each name is up to 16 characters">Job Checklist</l
 </div>
 
 <div id="PendantTab18" class="row mb-2 pt-1 border-top bd-gray">
-  <div class="cell-sm-6">
+  <div class="cell-sm-4">
     <input id="PendantSafeLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Enable Safe Jogging Area" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
   </div>
 </div>
 
 <div id="PendantTab19" class="row mb-2">
-  <label class="cell-sm-2"></label>
+  <div class="cell-sm-2">
+    <button id="PendantResetSafeLimits" class="button" onclick="ResetSafeLimits();" title="Reset to the default size based on the Grbl settings.
+The machine needs to be connected">Reset</button>
+  </div>
   <div class="cell-sm-4">
     <input id="PendantMinX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min X" data-append="mm" data-editable="true" />
   </div>
@@ -1746,8 +2177,8 @@ The names are separated by |. Each name is up to 16 characters">Job Checklist</l
   </div>
 </div>
 
-<div id="PendantTab21" class="row mb-2">
-  <label class="cell-sm-3 pt-1">Z probe sequence</label>
+<div id="PendantTab21" class="row  mt-3 mb-2">
+  <label class="cell-sm-3 pt-1">Z Probe Sequence</label>
   <div class="cell-sm-4">
   <select id="PendantZStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 1) { SelectSettingsTab(1); }">
     <option value="single">Single Pass</option>
@@ -1761,32 +2192,43 @@ The names are separated by |. Each name is up to 16 characters">Job Checklist</l
   <label class="cell-sm-3 pt-1" title="Percentage of the rapid Z speed to use when Z Down button is pressed.
 Z Up always moves at full speed">Down Jog Speed</label>
   <div class="cell-sm-4">
-   <input id="PendantZDown" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
+    <input id="PendantZDown" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
   </div>
 </div>
 
 <div id="PendantTab23" class="row mb-2">
   <label class="cell-sm-3 pt-1">Plate Thickness</label>
   <div class="cell-sm-4">
-   <input id="PendantZThickness" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="mm" data-editable="true" />
+    <input id="PendantZThickness" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="mm" data-editable="true" onchange="g_bZThicknessValid = true; $('#PendantResetZThickness').prop('disabled', false);" />
+  </div>
+  <div class="cell-sm-4">
+    <button id="PendantResetZThickness" class="button" onclick="g_bZThicknessValid = false; $('#PendantZThickness').val(localStorage.getItem('z0platethickness')); $('#PendantResetZThickness').prop('disabled', true);" title="Reset to the default value from OpenBuilds">Reset</button>
   </div>
 </div>
 
-<div id="PendantTab24" class="row mb-2 pt-1 border-top bd-gray">
+<div id="PendantTab24" class="row mb-2">
+  <label class="cell-sm-3 pt-1" title="Check this to use the Z value from the probe contact instead of the position after the probing completes.
+They can differ by 0.1-0.2mm as the machine doesn't stop moving immediately on contact." >Use Exact Probe Result</label>
+  <div class="cell-sm-4">
+    <input id="PendantUseProbe" type="checkbox" data-role="checkbox" data-style="2" checked />
+  </div>
+</div>
+
+<div id="PendantTab25" class="row mb-2 pt-1 border-top bd-gray">
   <label class="cell-sm-6">First Pass</label>
 </div>
 
-<div id="PendantTab25" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Initial movement to locate the Z probe">Probe</label>
+<div id="PendantTab26" class="row mb-2">
+  <label class="cell-sm-3 pt-1" title="Initial movement to locate the Z probe">Seek</label>
   <div class="cell-sm-4">
-    <input id="PendantZDescent1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    <input id="PendantZSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
   </div>
   <div class="cell-sm-4">
-    <input id="PendantZDescent1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    <input id="PendantZSeek1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
   </div>
 </div>
 
-<div id="PendantTab26" class="row mb-2">
+<div id="PendantTab27" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Retraction after the Z probe was touched.
 Use short distance and slower speed if there is a second pass">Retract</label>
   <div class="cell-sm-4">
@@ -1797,22 +2239,22 @@ Use short distance and slower speed if there is a second pass">Retract</label>
   </div>
 </div>
 
-<div id="PendantTab27" class="row mb-2 pt-1 border-top bd-gray">
+<div id="PendantTab28" class="row mb-2 pt-1 border-top bd-gray">
   <label class="cell-sm-6">Second Pass</label>
 </div>
 
-<div id="PendantTab28" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Second movement to locate the Z probe.
-Use shorter distance and slower speed than the first pass for better accuracy">Probe</label>
+<div id="PendantTab29" class="row mb-2">
+  <label class="cell-sm-3 pt-1" title="Second movement to locate the Z probe. Needs to be larger than the Retract from the first pass.
+Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
   <div class="cell-sm-4">
-    <input id="PendantZDescent2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    <input id="PendantZSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
   </div>
   <div class="cell-sm-4">
-    <input id="PendantZDescent2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    <input id="PendantZSeek2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
   </div>
 </div>
 
-<div id="PendantTab29" class="row mb-2">
+<div id="PendantTab210" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Retraction after the Z probe was touched">Retract</label>
   <div class="cell-sm-4">
     <input id="PendantZRetract2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
@@ -1822,8 +2264,8 @@ Use shorter distance and slower speed than the first pass for better accuracy">P
   </div>
 </div>
 
-<div id="PendantTab31" class="row mb-2">
-  <label class="cell-sm-3 pt-1">Tool probe sequence</label>
+<div id="PendantTab31" class="row mt-3 mb-2">
+  <label class="cell-sm-3 pt-1">Tool Probe Sequence</label>
   <div class="cell-sm-4">
   <select id="PendantToolStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 2) { SelectSettingsTab(2); }">
     <option value="disable">Disabled</option>
@@ -1859,12 +2301,12 @@ Z Up always moves at full speed">Down Jog Speed</label>
 </div>
 
 <div id="PendantTab35" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Initial movement to measure the tool">Probe</label>
+  <label class="cell-sm-3 pt-1" title="Initial movement to measure the tool">Seek</label>
   <div class="cell-sm-4">
-    <input id="PendantToolDescent1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    <input id="PendantToolSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
   </div>
   <div class="cell-sm-4">
-    <input id="PendantToolDescent1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    <input id="PendantToolSeek1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
   </div>
 </div>
 
@@ -1884,13 +2326,13 @@ Use short distance and slower speed if there is a second pass">Retract</label>
 </div>
 
 <div id="PendantTab38" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Second movement to measure the tool.
-Use shorter distance and slower speed than the first pass for better accuracy">Probe</label>
+  <label class="cell-sm-3 pt-1" title="Second movement to measure the tool. Needs to be larger than the Retract from the first pass.
+Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
   <div class="cell-sm-4">
-    <input id="PendantToolDescent2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    <input id="PendantToolSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
   </div>
   <div class="cell-sm-4">
-    <input id="PendantToolDescent2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    <input id="PendantToolSeek2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
   </div>
 </div>
 
@@ -2093,16 +2535,16 @@ window.SelectSettingsTab = function(index)
 	ShowElement($('#PendantTab11,#PendantTab12,#PendantTab13,#PendantTab16,#PendantTab17,#PendantTab18,#PendantTab19,#PendantTab110,#PendantTab111'), tab1);
 
 	var safeLimitsDisabled = !$('#PendantSafeLimits').prop('checked');
-	$('#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled);
+	$('#PendantResetSafeLimits,#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled);
 
 	var displayUnits = $('#PendantDisplayUnits').val();
 	ShowElement($('#PendantTab14'), tab1 && displayUnits != "inches");
 	ShowElement($('#PendantTab15'), tab1 && displayUnits == "inches");
 
 	var zStyle = $('#PendantZStyle').val();
-	ShowElement($('#PendantTab21'), tab2);
-	ShowElement($('#PendantTab22,#PendantTab23,#PendantTab25,#PendantTab26'), tab2 && zStyle != "default");
-	ShowElement($('#PendantTab24,#PendantTab27,#PendantTab28,#PendantTab29'), tab2 && zStyle == "dual");
+	ShowElement($('#PendantTab21,#PendantTab22'), tab2);
+	ShowElement($('#PendantTab23,#PendantTab24,#PendantTab26,#PendantTab27'), tab2 && zStyle != "default");
+	ShowElement($('#PendantTab25,#PendantTab28,#PendantTab29,#PendantTab210'), tab2 && zStyle == "dual");
 
 	ShowElement($('#PendantTab31'), tab3);
 
@@ -2125,6 +2567,50 @@ window.SelectSettingsTab = function(index)
 	}
 }
 
+function GetDefaultSafeLimits(axis)
+{
+	var param;
+	switch (axis)
+	{
+		case "X": param = grblParams["$130"]; break;
+		case "Y": param = grblParams["$131"]; break;
+		case "Z": param = grblParams["$132"]; break;
+	}
+
+	if (laststatus.connectionStatus != 0 && param != undefined)
+	{
+		return {min: 3 - param, max: -3};
+	}
+	return {min: 0, max: 0};
+}
+
+function GetSettingsSafeLimits(settings, axis)
+{
+	var limits = settings["safeLimits" + axis];
+	return (limits.min == 0 && limits.max == 0) ? GetDefaultSafeLimits(axis) : limits;
+}
+
+function GetSafeLimits(axis)
+{
+	return GetSettingsSafeLimits(g_PendantSettings, axis);
+}
+
+window.ResetSafeLimits = function()
+{
+	if (laststatus.connectionStatus != 0)
+	{
+		var limits = GetDefaultSafeLimits('X');
+		$('#PendantMinX').val(limits.min);
+		$('#PendantMaxX').val(limits.max);
+		limits = GetDefaultSafeLimits('Y');
+		$('#PendantMinY').val(limits.min);
+		$('#PendantMaxY').val(limits.max);
+		limits = GetDefaultSafeLimits('Z');
+		$('#PendantMinZ').val(limits.min);
+		$('#PendantMaxZ').val(limits.max);
+	}
+}
+
 // Reads the settings from the dialog and saves them
 function ReadSettingsFromDialog(updateRomSettings)
 {
@@ -2132,8 +2618,8 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.autoConnect = $('#PendantAutoConnect').prop('checked');
 	g_PendantSettings.displayUnits = $('#PendantDisplayUnits').val();
 
-	g_PendantSettings.wheelRatesMm = $('#PendantWheelRatesMm').val().split(',').map(Number);
-	g_PendantSettings.wheelRatesIn = $('#PendantWheelRatesIn').val().split(',').map(Number);
+	g_PendantSettings.wheelStepsMm = $('#PendantWheelStepsMm').val().split(',').map(Number);
+	g_PendantSettings.wheelStepsIn = $('#PendantWheelStepsIn').val().split(',').map(Number);
 
 	g_PendantSettings.safeLimitsEnabled = $('#PendantSafeLimits').prop('checked');
 	g_PendantSettings.safeLimitsX = {min: Number($('#PendantMinX').val()), max: Number($('#PendantMaxX').val())};
@@ -2145,18 +2631,19 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.jobChecklist = $('#PendantJobChecklist').val();
 	g_PendantSettings.zProbe.style = $('#PendantZStyle').val();
 	g_PendantSettings.zProbe.downSpeed = Math.min(Math.max($('#PendantZDown').val(), 10), 100);
-	g_PendantSettings.zProbe.thickness = Number($('#PendantZThickness').val());
-	g_PendantSettings.zProbe.descent1 = {travel: Number($('#PendantZDescent1T').val()), feed: Number($('#PendantZDescent1F').val())};
+	g_PendantSettings.zProbe.thickness = g_bZThicknessValid ? Number($('#PendantZThickness').val()) : undefined;
+	g_PendantSettings.zProbe.useProbeResult = $('#PendantUseProbe').prop('checked');
+	g_PendantSettings.zProbe.seek1 = {travel: Number($('#PendantZSeek1T').val()), feed: Number($('#PendantZSeek1F').val())};
 	g_PendantSettings.zProbe.retract1 = {travel: Number($('#PendantZRetract1T').val()), feed: Number($('#PendantZRetract1F').val())};
-	g_PendantSettings.zProbe.descent2 = {travel: Number($('#PendantZDescent2T').val()), feed: Number($('#PendantZDescent2F').val())};
+	g_PendantSettings.zProbe.seek2 = {travel: Number($('#PendantZSeek2T').val()), feed: Number($('#PendantZSeek2F').val())};
 	g_PendantSettings.zProbe.retract2 = {travel: Number($('#PendantZRetract2T').val()), feed: Number($('#PendantZRetract2F').val())};
 
 	g_PendantSettings.toolProbe.style = $('#PendantToolStyle').val();
 	g_PendantSettings.toolProbe.downSpeed = Math.min(Math.max($('#PendantToolDown').val(), 10), 100);
 	g_PendantSettings.toolProbe.location = {X: Number($('#PendantToolX').val()), Y: Number($('#PendantToolY').val()), Z: Number($('#PendantToolZ').val())};
-	g_PendantSettings.toolProbe.descent1 = {travel: Number($('#PendantToolDescent1T').val()), feed: Number($('#PendantToolDescent1F').val())};
+	g_PendantSettings.toolProbe.seek1 = {travel: Number($('#PendantToolSeek1T').val()), feed: Number($('#PendantToolSeek1F').val())};
 	g_PendantSettings.toolProbe.retract1 = {travel: Number($('#PendantToolRetract1T').val()), feed: Number($('#PendantToolRetract1F').val())};
-	g_PendantSettings.toolProbe.descent2 = {travel: Number($('#PendantToolDescent2T').val()), feed: Number($('#PendantToolDescent2F').val())};
+	g_PendantSettings.toolProbe.seek2 = {travel: Number($('#PendantToolSeek2T').val()), feed: Number($('#PendantToolSeek2F').val())};
 	g_PendantSettings.toolProbe.retract2 = {travel: Number($('#PendantToolRetract2T').val()), feed: Number($('#PendantToolRetract2F').val())};
 
 	// macros
@@ -2196,41 +2683,27 @@ function UpdateSettingsControls(settings, romSettings)
 		$('#PendantDisplayUnits').val(settings.displayUnits);
 	}
 
-	var rate = undefined;
-	settings.wheelRatesMm.forEach(r => { rate = rate ? (rate + ", " + r.toFixed(2)) : r.toFixed(2); });
-	$('#PendantWheelRatesMm').val(rate);
+	var steps = undefined;
+	settings.wheelStepsMm.forEach(s => { steps = steps ? (steps + ", " + s.toFixed(2)) : s.toFixed(2); });
+	$('#PendantWheelStepsMm').val(steps);
 
-	rate = undefined;
-	settings.wheelRatesIn.forEach(r => { rate = rate ? (rate + ", " + r.toFixed(3)) : r.toFixed(3); });
-	$('#PendantWheelRatesIn').val(rate);
+	steps = undefined;
+	settings.wheelStepsIn.forEach(s => { steps = steps ? (steps + ", " + s.toFixed(3)) : s.toFixed(3); });
+	$('#PendantWheelStepsIn').val(steps);
 
 	$('#PendantSafeLimits').prop('checked', settings.safeLimitsEnabled);
-	var minX = settings.safeLimitsX.min;
-	var maxX = settings.safeLimitsX.max;
-	if (minX == 0 && maxX == 0 && grblParams.$130)
-	{
-		minX = -Number(grblParams.$130);
-	}
-	$('#PendantMinX').val(minX);
-	$('#PendantMaxX').val(maxX);
 
-	var minY = settings.safeLimitsY.min;
-	var maxY = settings.safeLimitsY.max;
-	if (minY == 0 && maxY == 0 && grblParams.$131)
-	{
-		minY = -Number(grblParams.$131);
-	}
-	$('#PendantMinY').val(minY);
-	$('#PendantMaxY').val(maxY);
+	var limits = GetSettingsSafeLimits(settings, 'X');
+	$('#PendantMinX').val(limits.min);
+	$('#PendantMaxX').val(limits.max);
 
-	var minZ = settings.safeLimitsZ.min;
-	var maxZ = settings.safeLimitsZ.max;
-	if (minZ == 0 && maxZ == 0 && grblParams.$132)
-	{
-		minZ = -Number(grblParams.$132);
-	}
-	$('#PendantMinZ').val(minZ);
-	$('#PendantMaxZ').val(maxZ);
+	limits = GetSettingsSafeLimits(settings, 'Y');
+	$('#PendantMinY').val(limits.min);
+	$('#PendantMaxY').val(limits.max);
+
+	limits = GetSettingsSafeLimits(settings, 'Z');
+	$('#PendantMinZ').val(limits.min);
+	$('#PendantMaxZ').val(limits.max);
 
 	// advanced settings
 	$('#PendantPauseSpindle').prop('checked', settings.pauseSpindle);
@@ -2245,23 +2718,28 @@ function UpdateSettingsControls(settings, romSettings)
 	{
 		$('#PendantZStyle').val(settings.zProbe.style);
 	}
-	if (settings.zProbe.thickness == undefined)
+
+ 	if (settings.zProbe.thickness == undefined)
 	{
+		g_bZThicknessValid = false;
 		$('#PendantZThickness').val(localStorage.getItem('z0platethickness'));
 	}
 	else
 	{
+		g_bZThicknessValid = true;
 		$('#PendantZThickness').val(settings.zProbe.thickness);
 	}
+	$('#PendantResetZThickness').prop('disabled', !g_bZThicknessValid);
 
+	$('#PendantUseProbe').prop('checked', g_PendantSettings.zProbe.useProbeResult);
 	$('#PendantZDown').val(settings.zProbe.downSpeed);
-	$('#PendantZDescent1T').val(settings.zProbe.descent1.travel);
-	$('#PendantZDescent1F').val(settings.zProbe.descent1.feed);
+	$('#PendantZSeek1T').val(settings.zProbe.seek1.travel);
+	$('#PendantZSeek1F').val(settings.zProbe.seek1.feed);
 	$('#PendantZRetract1T').val(settings.zProbe.retract1.travel);
 	$('#PendantZRetract1F').val(settings.zProbe.retract1.feed);
 
-	$('#PendantZDescent2T').val(settings.zProbe.descent2.travel);
-	$('#PendantZDescent2F').val(settings.zProbe.descent2.feed);
+	$('#PendantZSeek2T').val(settings.zProbe.seek2.travel);
+	$('#PendantZSeek2F').val(settings.zProbe.seek2.feed);
 	$('#PendantZRetract2T').val(settings.zProbe.retract2.travel);
 	$('#PendantZRetract2F').val(settings.zProbe.retract2.feed);
 
@@ -2280,13 +2758,13 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantToolY').val(settings.toolProbe.location.Y);
 	$('#PendantToolZ').val(settings.toolProbe.location.Z);
 	$('#PendantToolDown').val(settings.toolProbe.downSpeed);
-	$('#PendantToolDescent1T').val(settings.toolProbe.descent1.travel);
-	$('#PendantToolDescent1F').val(settings.toolProbe.descent1.feed);
+	$('#PendantToolSeek1T').val(settings.toolProbe.seek1.travel);
+	$('#PendantToolSeek1F').val(settings.toolProbe.seek1.feed);
 	$('#PendantToolRetract1T').val(settings.toolProbe.retract1.travel);
 	$('#PendantToolRetract1F').val(settings.toolProbe.retract1.feed);
 
-	$('#PendantToolDescent2T').val(settings.toolProbe.descent2.travel);
-	$('#PendantToolDescent2F').val(settings.toolProbe.descent2.feed);
+	$('#PendantToolSeek2T').val(settings.toolProbe.seek2.travel);
+	$('#PendantToolSeek2F').val(settings.toolProbe.seek2.feed);
 	$('#PendantToolRetract2T').val(settings.toolProbe.retract2.travel);
 	$('#PendantToolRetract2F').val(settings.toolProbe.retract2.feed);
 
@@ -2410,6 +2888,25 @@ function CleanupOldVersion()
 	}
 }
 
+// Recursively merge stored settings into current if the name and type match
+function MergeSettingsRec(current, stored)
+{
+	for (var prop in stored)
+	{
+		if (prop in current && typeof(stored[prop]) == typeof(current[prop]) && Array.isArray(stored[prop]) == Array.isArray(current[prop]))
+		{
+			if (typeof(current[prop]) == 'object' && !Array.isArray(current[prop]))
+			{
+				MergeSettingsRec(current[prop], stored[prop]);
+			}
+			else
+			{
+				current[prop] = stored[prop];
+			}
+		}
+	}
+}
+
 // Initializes the plugin. tries to auto-connect if enabled
 function InitializePendantPlugin()
 {
@@ -2422,10 +2919,7 @@ function InitializePendantPlugin()
 		var settings = JSON.parse(localStorage.getItem("PendantSettings"));
 		if (settings)
 		{
-			for (var prop in settings)
-			{
-				g_PendantSettings[prop] = settings[prop];
-			}
+			MergeSettingsRec(g_PendantSettings, settings);
 		}
 
 		$('#DisconnectPendant').on('click', DisconnectPendant);

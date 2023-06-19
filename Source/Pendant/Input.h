@@ -1,16 +1,12 @@
 #pragma once
 
 const uint8_t BUTTON_JOYSTICK = 8;
-
-#ifdef ENABLE_ABORT_BUTTON
 const uint8_t BUTTON_ABORT = 9;
+
+const int JOYSTICK_STEPS = 10; // number of steps in the joystick range
+
 #ifndef BUTTON_COUNT
 #define BUTTON_COUNT 10
-#endif
-#else
-#ifndef BUTTON_COUNT
-#define BUTTON_COUNT 9
-#endif
 #endif
 
 const uint16_t BUTTON_HOLD_TIME = 1000; // hold for 1 second
@@ -22,6 +18,7 @@ uint16_t g_ButtonState; // 0 - up, 1 - down
 uint16_t g_ButtonClick; // buttons clicked this frame
 uint16_t g_ButtonUnclick; // buttons released this frame
 uint16_t g_ButtonHold; // buttons held this frame
+uint16_t g_ButtonDown; // buttons that are logically pressed
 uint16_t g_ButtonChangeTimers[BUTTON_COUNT];
 
 bool TestBit( uint16_t flags, uint8_t bit )
@@ -47,6 +44,7 @@ void UpdateButtonState( uint16_t physicalState, uint16_t dt )
 	g_ButtonUnclick = ~physicalState & g_ButtonState;
 	g_ButtonState = physicalState;
 	g_ButtonHold = 0;
+	g_ButtonDown = 0;
 
 	// update timers
 	for (int i = 0; i < BUTTON_COUNT; i++)
@@ -68,12 +66,12 @@ void UpdateButtonState( uint16_t physicalState, uint16_t dt )
 			}
 			timer = t;
 		}
-	}
-}
 
-bool IsButtonDown( int8_t button )
-{
-	return TestBit(g_ButtonState, button) && (TestBit(g_ButtonHold, button) || g_ButtonChangeTimers[button] != 0xFFFF);
+		if ((g_ButtonState & mask) && ((g_ButtonHold & mask) || timer != 0xFFFF))
+		{
+			g_ButtonDown |= mask;
+		}
+	}
 }
 
 void ReleaseAllButtons( void )
@@ -102,19 +100,19 @@ void UpdateJoystick()
 #endif
 }
 
-// Quantizes the raw joystick position to range [-10..10] based on the calibration settings
+// Quantizes the raw joystick position to range [-JOYSTICK_STEPS..JOYSTICK_STEPS] based on the calibration settings
 int8_t QuantizeJoystick( uint16_t val, const uint16_t calibration[4] )
 {
 	if (val < calibration[1])
 	{
-		int8_t res = - 1 - ((calibration[1] - val - 1) * 10) / (calibration[1] - calibration[0]);
-		return res > -10 ? res : -10;
+		int8_t res = - 1 - ((calibration[1] - val - 1) * JOYSTICK_STEPS) / (calibration[1] - calibration[0]);
+		return res > -JOYSTICK_STEPS ? res : -JOYSTICK_STEPS;
 	}
 
 	if (val > calibration[2])
 	{
-		int8_t res = 1 + (val - calibration[2] - 1) * 10 / (calibration[3] - calibration[2]);
-		return res < 10 ? res : 10;
+		int8_t res = 1 + (val - calibration[2] - 1) * JOYSTICK_STEPS / (calibration[3] - calibration[2]);
+		return res < JOYSTICK_STEPS ? res : JOYSTICK_STEPS;
 	}
 
 	return 0;
@@ -122,7 +120,7 @@ int8_t QuantizeJoystick( uint16_t val, const uint16_t calibration[4] )
 
 ///////////////////////////////////////////////////////////////////////////////
 // Wheel
-// Reading of hand wheel, greatly simplified version of https://github.com/gfvalvo/NewEncoder.
+// Reading of hand wheel, greatly simplified version of https://github.com/gfvalvo/NewEncoder
 // Converted to hard-coded values and global variables to save RAM
 
 const int16_t ENCODER_MIN_VALUE = -32000;
@@ -146,6 +144,50 @@ int16_t EncoderDrainValue( void )
 void EncoderAddValue( int8_t add )
 {
 	g_EncoderValue += add;
+}
+
+#elif USE_NEW_ENCODER
+
+#include "NewEncoder.h"
+
+class HandWheelEncoder : public NewEncoder
+{
+public:
+	HandWheelEncoder( void ):
+		NewEncoder(g_EncoderPinA, g_EncoderPinB, ENCODER_MIN_VALUE, ENCODER_MAX_VALUE, 0, HALF_PULSE)
+	{
+	}
+
+	int16_t DrainValue( void )
+	{
+		NewEncoder::EncoderState currentEncoderState;
+		if (getState(currentEncoderState))
+		{
+			int16_t delta = currentEncoderState.currentValue / 2;
+			if (delta != 0)
+			{
+				noInterrupts();
+				liveState.currentValue -= delta * 2;
+				interrupts();
+				return delta;
+			}
+		}
+		return 0;
+	}
+};
+
+HandWheelEncoder g_HandWheelEncoder;
+
+void InitializeEncoder( void )
+{
+	g_HandWheelEncoder.begin();
+	NewEncoder::EncoderState state;
+	g_HandWheelEncoder.getState(state);
+}
+
+int16_t EncoderDrainValue( void )
+{
+	return g_HandWheelEncoder.DrainValue();
 }
 
 #else
@@ -174,9 +216,6 @@ const uint8_t g_NE_halfPulseTransitionTable[][4] PROGMEM =
 	{ NE_DEBOUNCE_3, NE_DETENT_1, NE_DETENT_0 | NE_INCREMENT_DELTA, NE_DEBOUNCE_3 },  // DEBOUNCE_3 0b110
 	{ NE_DEBOUNCE_3, NE_DETENT_1, NE_DEBOUNCE_2, NE_DETENT_1 }  // DETENT_1 0b111
 };
-
-const uint8_t ENCODER_PIN_A = 3;
-const uint8_t ENCODER_PIN_B = 2;
 
 uint8_t *g_aPin_register, *g_bPin_register;
 uint8_t g_aPin_bitmask, g_bPin_bitmask;
@@ -263,17 +302,14 @@ void EncoderPinBChange( void )
 
 void InitializeEncoder( void )
 {
-	pinMode(ENCODER_PIN_A, INPUT_PULLUP);
-	pinMode(ENCODER_PIN_B, INPUT_PULLUP);
-	g_aPin_register = portInputRegister(digitalPinToPort(ENCODER_PIN_A));
-	g_bPin_register = portInputRegister(digitalPinToPort(ENCODER_PIN_B));
-	g_aPin_bitmask = digitalPinToBitMask(ENCODER_PIN_A);
-	g_bPin_bitmask = digitalPinToBitMask(ENCODER_PIN_B);
+	pinMode(g_EncoderPinA, INPUT_PULLUP);
+	pinMode(g_EncoderPinB, INPUT_PULLUP);
+	g_aPin_register = portInputRegister(digitalPinToPort(g_EncoderPinA));
+	g_bPin_register = portInputRegister(digitalPinToPort(g_EncoderPinB));
+	g_aPin_bitmask = digitalPinToBitMask(g_EncoderPinA);
+	g_bPin_bitmask = digitalPinToBitMask(g_EncoderPinB);
 
-	delay(2);  // Seems to help ensure first reading after pinMode is correct
-//	g_EncoderPinAValue = digitalRead(ENCODER_PIN_A) == HIGH;
-//	g_EncoderPinBValue = digitalRead(ENCODER_PIN_B) == HIGH;
-
+	delay(2); // Seems to help ensure first reading after pinMode is correct
 	g_EncoderPinAValue = ((*g_aPin_register) & g_aPin_bitmask) ? 1 : 0;
 	g_EncoderPinBValue = ((*g_bPin_register) & g_bPin_bitmask) ? 1 : 0;
 
@@ -284,8 +320,8 @@ void InitializeEncoder( void )
 		g_CurrentEncoderState = NE_DETENT_1;
 	}
 
-	attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A), EncoderPinAChange, CHANGE);
-	attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_B), EncoderPinBChange, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(g_EncoderPinA), EncoderPinAChange, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(g_EncoderPinB), EncoderPinBChange, CHANGE);
 }
 
 int16_t EncoderDrainValue( void )

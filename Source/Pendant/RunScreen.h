@@ -36,90 +36,127 @@ RunScreen::ScreenState RunScreen::DecodeState( void ) const
 
 void RunScreen::Draw( void )
 {
-	DrawMachineStatus();
-	DrawText(0, 1, g_StrX);
-	DrawText(0, 2, g_StrY);
-	DrawText(0, 3, g_StrZ);
+	ScreenState screenState = DecodeState();
 
-	PrintX(g_TextBuf); DrawText(2, 1, g_TextBuf);
-	PrintY(g_TextBuf); DrawText(2, 2, g_TextBuf);
-	PrintZ(g_TextBuf); DrawText(2, 3, g_TextBuf);
-
-	uint8_t unusedButtons = 0x70;
-
-	ScreenState state = DecodeState();
-	switch (state)
+#if PARTIAL_SCREEN_UPDATE
+	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->bShowInches != g_bShowInches || pDrawState->screenState != screenState;
+	pDrawState->bShowInches = g_bShowInches;
+	pDrawState->screenState = screenState;
+	if (bDrawAll && !s_DrawState.bDrawAll)
 	{
-		case STATE_IDLE: // job hasn't started, ready to run
-			{
+		ClearBuffer();
+	}
+
+	const bool bDrawX = bDrawAll || pDrawState->x != g_WorkX;
+	const bool bDrawY = bDrawAll || pDrawState->y != g_WorkY;
+	const bool bDrawZ = bDrawAll || pDrawState->z != g_WorkZ;
+	const bool bDrawF = bDrawAll || pDrawState->f != g_FeedOverride || pDrawState->_override != m_Override;
+	const bool bDrawS = bDrawAll || pDrawState->s != g_SpeedOverride || pDrawState->_override != m_Override;
+	pDrawState->x = g_WorkX;
+	pDrawState->y = g_WorkY;
+	pDrawState->z = g_WorkZ;
+	pDrawState->f = g_FeedOverride;
+	pDrawState->s = g_SpeedOverride;
+	pDrawState->_override = m_Override;
+#else
+	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawF = true, bDrawS = true, bDrawAll = true;
+#endif
+
+	if (bDrawAll)
+	{
+		DrawMachineStatus(ROMSTR("JOB"), 3);
+		uint8_t unusedButtons = 0x70;
+		switch (screenState)
+		{
+			case STATE_IDLE: // job hasn't started, ready to run
 				DrawButton(BUTTON_RUN, ROMSTR("Run"), 3, true);
 				DrawButton(BUTTON_BACK, g_StrBack, 4, false);
 				unusedButtons &= ~((1<<BUTTON_RUN)|(1<<BUTTON_BACK));
-			}
-			break;
-		case STATE_RUNNING: // job is currently running
-			{
+				break;
+
+			case STATE_RUNNING: // job is currently running
 				DrawButton(BUTTON_PAUSE, ROMSTR("Pause"), 5, false);
 				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
 				unusedButtons &= ~((1<<BUTTON_PAUSE)|(1<<BUTTON_STOP));
-			}
-			break;
-		case STATE_PAUSED: // job is paused, but not clear to resume
-			{
-				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
-				unusedButtons &= ~(1<<BUTTON_STOP);
-				if (g_RealRpm > 0)
+				break;
+
+			case STATE_PAUSED: // job is paused, but not clear to resume
+				if (g_RealSpeed > 0)
 				{
 					DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
 					unusedButtons &= ~(1<<BUTTON_RPM0);
 				}
-			}
-			break;
-		case STATE_PAUSED_READY: // job is ready to resome
-			{
+				// fallthrough
+			case STATE_PAUSING: // stopping (still show STOP to avoid flicker)
+				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
+				unusedButtons &= ~(1<<BUTTON_STOP);
+				break;
+
+			case STATE_PAUSED_READY: // job is ready to resome
 				DrawButton(BUTTON_RESUME, ROMSTR("Resume"), 6, true);
 				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
 				unusedButtons &= ~((1<<BUTTON_RESUME)|(1<<BUTTON_STOP));
-				if (g_RealRpm > 0)
+				if (g_RealSpeed > 0)
 				{
 					DrawButton(BUTTON_RPM0, g_StrRPM_0, 5, false);
 					unusedButtons &= ~(1<<BUTTON_RPM0);
 				}
-			}
-			break;
-		case STATE_OTHER:
-			{
-			}
-			break;
-	}
-	DrawUnusedButtons(unusedButtons);
-
-	Sprintf(g_TextBuf, "%3d", g_FeedOverride);
-	if (m_Override == BUTTON_FEED)
-	{
-		DrawText(0, 4, g_StrBoldF);
-		DrawTextBold(2, 4, g_TextBuf);
-		DrawText(5, 4, g_StrBoldPercent);
-	}
-	else
-	{
-		DrawText(0, 4, g_StrF);
-		DrawText(2, 4, g_TextBuf);
-		DrawText(5, 4, g_StrPercent);
+				break;
+		}
+		DrawUnusedButtons(unusedButtons);
 	}
 
-	Sprintf(g_TextBuf, "%3d", g_RpmOverride);
-	if (m_Override == BUTTON_SPEED)
+	if (bDrawX)
 	{
-		DrawText(12, 4, g_StrBoldS);
-		DrawTextBold(14, 4, g_TextBuf);
-		DrawText(17, 4, g_StrBoldPercent);
+		DrawText(0, 1, g_StrX);
+		PrintCoord(g_TextBuf, g_WorkX); DrawText(2, 1, g_TextBuf);
 	}
-	else
+
+	if (bDrawY)
 	{
-		DrawText(12, 4, g_StrS);
-		DrawText(14, 4, g_TextBuf);
-		DrawText(17, 4, g_StrPercent);
+		PrintCoord(g_TextBuf, g_WorkY); DrawText(2, 2, g_TextBuf);
+		DrawText(0, 2, g_StrY);
+	}
+
+	if (bDrawZ)
+	{
+		PrintCoord(g_TextBuf, g_WorkZ); DrawText(2, 3, g_TextBuf);
+		DrawText(0, 3, g_StrZ);
+	}
+
+	if (bDrawF)
+	{
+		Sprintf(g_TextBuf, "%3d", g_FeedOverride);
+		if (m_Override == BUTTON_FEED)
+		{
+			DrawText(0, 4, g_StrBoldF);
+			DrawTextBold(2, 4, g_TextBuf);
+			DrawText(5, 4, g_StrBoldPercent);
+		}
+		else
+		{
+			DrawText(0, 4, g_StrF);
+			DrawText(2, 4, g_TextBuf);
+			DrawText(5, 4, g_StrPercent);
+		}
+	}
+
+	if (bDrawS)
+	{
+		Sprintf(g_TextBuf, "%3d", g_SpeedOverride);
+		if (m_Override == BUTTON_SPEED)
+		{
+			DrawText(12, 4, g_StrBoldS);
+			DrawTextBold(14, 4, g_TextBuf);
+			DrawText(17, 4, g_StrBoldPercent);
+		}
+		else
+		{
+			DrawText(12, 4, g_StrS);
+			DrawText(14, 4, g_TextBuf);
+			DrawText(17, 4, g_StrPercent);
+		}
 	}
 }
 

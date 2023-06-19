@@ -2,37 +2,79 @@ DEFINE_STRING(g_StrJob, "Job>");
 
 void MainScreen::Draw( void )
 {
-	DrawMachineStatus();
-	DrawText(0, 1, g_StrX);
-	DrawText(0, 2, g_StrY);
-	DrawText(0, 3, g_StrZ);
-
-	PrintX(g_TextBuf); DrawText(2, 1, g_TextBuf);
-	PrintY(g_TextBuf); DrawText(2, 2, g_TextBuf);
-	PrintZ(g_TextBuf); DrawText(2, 3, g_TextBuf);
-
-	DrawButton(BUTTON_WCS, g_bShowWork ? g_StrWCS : g_StrMCS, 5, false);
-	if (g_MachineStatus == STATUS_IDLE)
+#if PARTIAL_SCREEN_UPDATE
+	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->bWorkSpace != g_bWorkSpace || pDrawState->bShowInches != g_bShowInches ||
+		pDrawState->bCanShowStop != g_bCanShowStop || pDrawState->bJobRunning != g_bJobRunning;
+	pDrawState->bWorkSpace = g_bWorkSpace;
+	pDrawState->bShowInches = g_bShowInches;
+	pDrawState->bCanShowStop = g_bCanShowStop;
+	pDrawState->bJobRunning = g_bJobRunning;
+	if (bDrawAll && !s_DrawState.bDrawAll)
 	{
-		DrawButton(BUTTON_PROBE, ROMSTR("Probe>"), 6, false);
-		DrawButton(BUTTON_JOB, g_StrJob, 4, false);
-		DrawButton(BUTTON_MACROS, ROMSTR("Macros>"), 7, false);
-		DrawButton(BUTTON_HOME, ROMSTR("Home"), 4, true);
+		ClearBuffer();
 	}
-	else
+
+	const bool bDrawX = bDrawAll || pDrawState->wx != g_WorkX || pDrawState->ox != g_OffsetX;
+	const bool bDrawY = bDrawAll || pDrawState->wy != g_WorkY || pDrawState->oy != g_OffsetY;
+	const bool bDrawZ = bDrawAll || pDrawState->wz != g_WorkZ || pDrawState->oz != g_OffsetZ;
+	pDrawState->wx = g_WorkX;
+	pDrawState->ox = g_OffsetX;
+	pDrawState->wy = g_WorkY;
+	pDrawState->oy = g_OffsetY;
+	pDrawState->wz = g_WorkZ;
+	pDrawState->oz = g_OffsetZ;
+#else
+	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawAll = true;
+#endif
+
+	if (bDrawAll)
 	{
-		uint8_t unusedButtons = 0xE8;
-		if (g_bCanShowStop)
+		DrawMachineStatus(ROMSTR("MAIN"), 4);
+		DrawText(0, 1, g_StrX);
+		DrawText(0, 2, g_StrY);
+		DrawText(0, 3, g_StrZ);
+
+		DrawButton(BUTTON_WCS, g_bWorkSpace ? g_StrWCS : g_StrMCS, 5, false);
+		if (g_MachineStatus == STATUS_IDLE)
 		{
-			DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
-			unusedButtons &= ~(1 << BUTTON_STOP);
-		}
-		if (g_bJobRunning)
-		{
+			DrawButton(BUTTON_PROBE, ROMSTR("Probe>"), 6, false);
 			DrawButton(BUTTON_JOB, g_StrJob, 4, false);
-			unusedButtons &= ~(1 << BUTTON_JOB);
+			DrawButton(BUTTON_MACROS, ROMSTR("Macros>"), 7, false);
+			DrawButton(BUTTON_HOME, ROMSTR("Home"), 4, true);
 		}
-		DrawUnusedButtons(unusedButtons);
+		else
+		{
+			uint8_t unusedButtons = 0xE8;
+			if (g_bCanShowStop)
+			{
+				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
+				unusedButtons &= ~(1 << BUTTON_STOP);
+			}
+			if (g_bJobRunning)
+			{
+				DrawButton(BUTTON_JOB, g_StrJob, 4, false);
+				unusedButtons &= ~(1 << BUTTON_JOB);
+			}
+			DrawUnusedButtons(unusedButtons);
+		}
+	}
+
+	u8g2.setColorIndex(1);
+	if (bDrawX)
+	{
+		PrintX(g_TextBuf);
+		DrawText(2, 1, g_TextBuf);
+	}
+	if (bDrawY)
+	{
+		PrintY(g_TextBuf);
+		DrawText(2, 2, g_TextBuf);
+	}
+	if (bDrawZ)
+	{
+		PrintZ(g_TextBuf);
+		DrawText(2, 3, g_TextBuf);
 	}
 }
 
@@ -41,7 +83,7 @@ void MainScreen::Update( unsigned long time )
 	int8_t button = GetCurrentButton();
 	if (button == BUTTON_WCS)
 	{
-		g_bShowWork = !g_bShowWork;
+		g_bWorkSpace = !g_bWorkSpace;
 	}
 	else if (g_MachineStatus == STATUS_IDLE)
 	{
@@ -77,7 +119,7 @@ void MainScreen::Update( unsigned long time )
 			}
 			else
 			{
-				g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_Z);
+				g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_Z, true);
 			}
 		}
 		else if (button == BUTTON_JOB)
@@ -86,7 +128,9 @@ void MainScreen::Update( unsigned long time )
 		}
 		else if (button == BUTTON_MACROS)
 		{
+#ifndef DISABLE_MACRO_SCREEN
 			g_MacroScreen.Activate(time);
+#endif
 		}
 	}
 	else if (g_bCanShowStop && button == BUTTON_STOP)
