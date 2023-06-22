@@ -111,16 +111,16 @@ void JogScreen::Draw( void )
 		PrintX(g_TextBuf);
 		if (pState->m_Axis & 1)
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawBox(0, g_Rows[1] - 1, 8, 10);
-			SetColorIndex(0);
+			SetDrawColor(0);
 			DrawText(0, 1, g_StrBoldX);
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawTextBold(2, 1, g_TextBuf);
 		}
 		else
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawText(0, 1, g_StrX);
 			DrawText(2, 1, g_TextBuf);
 		}
@@ -131,16 +131,16 @@ void JogScreen::Draw( void )
 		PrintY(g_TextBuf);
 		if (pState->m_Axis & 2)
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawBox(0, g_Rows[2] - 1, 8, 10);
-			SetColorIndex(0);
+			SetDrawColor(0);
 			DrawText(0, 2, g_StrBoldY);
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawTextBold(2, 2, g_TextBuf);
 		}
 		else
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawText(0, 2, g_StrY);
 			DrawText(2, 2, g_TextBuf);
 		}
@@ -151,16 +151,16 @@ void JogScreen::Draw( void )
 		PrintZ(g_TextBuf);
 		if (pState->m_Axis & 4)
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawBox(0, g_Rows[3] - 1, 8, 10);
-			SetColorIndex(0);
+			SetDrawColor(0);
 			DrawText(0, 3, g_StrBoldZ);
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawTextBold(2, 3, g_TextBuf);
 		}
 		else
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawText(0, 3, g_StrZ);
 			DrawText(2, 3, g_TextBuf);
 		}
@@ -180,7 +180,7 @@ void JogScreen::Update( unsigned long time )
 	pState->m_bShowStop = g_bCanShowStop && (time - pState->m_LastInputTime > SHOW_STOP_TIME); // half second of no idle and no input
 	if (pState->m_bShowActions)
 	{
-		if (g_MachineStatus < STATUS_IDLE)
+		if (g_MachineStatus != STATUS_IDLE)
 		{
 			pState->m_bShowActions = false; // hide actions as soon as not idle
 		}

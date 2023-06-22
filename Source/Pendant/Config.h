@@ -15,7 +15,9 @@
 #define USE_NEW_ENCODER 0 // You can set to 1 (for example to test a new wheel hardware), but it will disable some other features to save memory
 
 #if USE_NEW_ENCODER
-// Disable 2 of the more memory-intensive screens to free up some memory for the NewEncoder library
+// Disable few of the non-essential screens to free up some memory for the NewEncoder library
+// To save even more memory, disable the macro U8G2_16BIT in U8g2\src\clib\u8g2.h
+#define DISABLE_WELCOME_SCREEN
 #define DISABLE_MACRO_SCREEN
 #define DISABLE_CALIBRATION_SCREEN
 #endif

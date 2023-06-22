@@ -21,13 +21,13 @@ void WelcomeScreen::Draw( void )
 	if (bDrawName)
 	{
 		DrawBox(0, 7, 128, 14);
-		SetColorIndex(0);
+		SetDrawColor(0);
 		int8_t len = Strlen(g_RomSettings.pendantName);
 		DrawTextXY(64 - (len*7)/2, 10, g_RomSettings.pendantName);
 	}
 	if (bDrawConnected)
 	{
-		SetColorIndex(1);
+		SetDrawColor(1);
 		DrawTextXY(1, 36, g_bConnected ? STRING_CHECKED : STRING_UNCHECKED);
 	}
 }

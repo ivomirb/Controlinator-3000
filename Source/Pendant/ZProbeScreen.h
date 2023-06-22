@@ -60,18 +60,18 @@ void ZProbeScreen::Draw( void )
 		if (m_bJoggingUp)
 		{
 			DrawBox(0, g_Rows[2] - 1, 4*7 + 2, 10);
-			SetColorIndex(0);
+			SetDrawColor(0);
 		}
 #if PARTIAL_SCREEN_UPDATE
 		else
 		{
-			SetColorIndex(0);
+			SetDrawColor(0);
 			DrawBox(0, g_Rows[2] - 1, 4*7 + 2, 10);
-			SetColorIndex(1);
+			SetDrawColor(1);
 		}
 #endif
 		DrawText(0, 2, ROMSTR("Z Up"));
-		SetColorIndex(1);
+		SetDrawColor(1);
 	}
 
 	if (bDrawDown)
@@ -79,18 +79,18 @@ void ZProbeScreen::Draw( void )
 		if (m_bJoggingDown)
 		{
 			DrawBox(0, g_Rows[3] - 1, 6*7 + 2, 10);
-			SetColorIndex(0);
+			SetDrawColor(0);
 		}
 #if PARTIAL_SCREEN_UPDATE
 		else
 		{
-			SetColorIndex(0);
+			SetDrawColor(0);
 			DrawBox(0, g_Rows[3] - 1, 6*7 + 2, 10);
-			SetColorIndex(1);
+			SetDrawColor(1);
 		}
 #endif
 		DrawText(0, 3, ROMSTR("Z Down"));
-		SetColorIndex(1);
+		SetDrawColor(1);
 	}
 }
 
@@ -101,6 +101,16 @@ void ZProbeScreen::Update( unsigned long time )
 	{
 		// lock joging until both up and down buttons are released to avoid accidental move as the screen is activated
 		m_bJoggingLocked = false;
+	}
+
+	if (g_ButtonState)
+	{
+		m_LastInputTime = time;
+	}
+	if (time - m_LastInputTime > ZPROBE_INACTIVITY_TIMER)
+	{
+		CloseScreen();
+		return;
 	}
 
 	if (!m_bJoggingLocked && g_MachineStatus == STATUS_IDLE && (time - g_LastBusyTime > 500) && !m_bJoggingUp && !m_bJoggingDown)
@@ -184,6 +194,7 @@ void ZProbeScreen::Activate( unsigned long time, ProbeMode mode, bool bNotify )
 	m_bJoggingUp = false;
 	m_bJoggingDown = false;
 	m_bJoggingLocked = true;
+	m_LastInputTime = time;
 }
 
 void ZProbeScreen::Deactivate( void )

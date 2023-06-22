@@ -50,6 +50,7 @@ const CHAR_ACK = String.fromCharCode(0x1F);
 const MAX_MESSAGE_LENGTH = 50; // send up to 50 bytes to the pendant and then wait for ACK. Arduino has only 64 bytes of buffer for the serial connection
 
 var g_StatusCounter = 0;
+var g_JobProgress;
 // Status cache - store the last sent value to avoid spamming when nothing changes
 var g_LastStatusStr = undefined;
 var g_LastStatus2Str = undefined;
@@ -70,26 +71,26 @@ var g_LastUpdateTime = undefined;
 const g_StatusMap =
 {
 	"Unknown": 0,
+	"Disconnected": 1,
 
-	"Jog": 1,
-	"Run": 2,
-	"Check": 3,
-	"Home": 4,
-	"Running": 5,
-	"Resuming": 6,
-	"Door:3": 7,
+	"Jog": 2,
+	"Run": 3,
+	"Check": 4,
+	"Home": 5,
+	"Running": 6,
+	"Resuming": 7,
+	"Door:3": 8,
 
-	"Idle": 8,
-	"Hold:0": 9,
-	"Hold:1": 10,
-	"Door:0": 11,
-	"Door:1": 12,
-	"Door:2": 13,
-	"Alarm": 14,
-	"Sleep": 15,
-	"Stopped": 16,
-	"Paused": 17,
-	"Disconnected": 18,
+	"Idle": 9,
+	"Hold:0": 10,
+	"Hold:1": 11,
+	"Door:0": 12,
+	"Door:1": 13,
+	"Door:2": 14,
+	"Alarm": 15,
+	"Sleep": 16,
+	"Stopped": 17,
+	"Paused": 18,
 };
 
 // Constructs a container with the default settings
@@ -193,6 +194,10 @@ function GenerateStatusString(s)
 		+ (g_TargetSpeedRate != undefined ? g_TargetSpeedRate : s.machine.overrides.spindleOverride.toFixed(0)) + ","
 		+ s.machine.overrides.realFeed.toFixed(0) + ","
 		+ s.machine.overrides.realSpindle.toFixed(0);
+	if (status == g_StatusMap.Run && g_JobProgress != undefined)
+	{
+		str += "|" + g_JobProgress.toFixed(0);
+	}
 	return str;
 }
 
@@ -240,7 +245,7 @@ function PushStatus(status)
 	}
 }
 
-// Processes the status from  the machine
+// Processes the status from the machine
 function HandleStatus(status)
 {
 	g_StatusCounter++;
@@ -265,6 +270,15 @@ function HandleStatus(status)
 	PushStatus(status);
 }
 
+// Handles progress update
+function HandleQueueStatus(data)
+{
+	var left = data[0]
+	var total = data[1]
+	var done = total - left;
+	g_JobProgress = done / total * 100;
+}
+
 // Returns true if the machine was idle for at least 500ms, and the last status update was no more than 300ms ago
 function IsStableIdle()
 {
@@ -284,6 +298,7 @@ function HandleJobComplete(data)
 		console.log("JOB COMPLETED", data);
 	}
 
+	g_JobProgress = undefined;
 	if (g_PendantPort == undefined)
 	{
 		return;
@@ -811,7 +826,7 @@ function HandleJogCommand(command)
 			step = -step;
 		}
 
-		if (axis != g_JogAxis || inches != g_bJogInches || step != g_JogStep)
+		if (axis != g_JogAxis || inches != g_bJogInches)
 		{
 			// axis or unit is switched, clear everything
 			g_JogWQueue = 0;
@@ -820,6 +835,13 @@ function HandleJogCommand(command)
 			g_bJogInches = inches;
 			g_JogWLocation = undefined;
 		}
+		else if (step != g_JogStep)
+		{
+			// only the step has changed, just clear the queue
+			g_JogWQueue = 0;
+			g_JogStep = step;
+		}
+
 		g_JogWQueue += count;
 
 		g_LastWheelMoveTime = Date.now();
@@ -1731,6 +1753,7 @@ function TryComHandler(data)
 			g_CurrentTryParser.on('data', PendantComHandler);
 			g_PendantPort.on('close', DisconnectPendant);
 			socket.on('status', HandleStatus);
+			socket.on('queueCount', HandleQueueStatus);
 			socket._callbacks["$jobComplete"].splice(0,0, HandleJobComplete);
 
 			g_CurrentTryPort = undefined;
@@ -1847,6 +1870,7 @@ window.DisconnectPendant = function()
 	$('#pendant > span.icon > span > svg > path').attr("fill", "silver");
 	$('#DisconnectPendant').addClass("disabled");
 	socket.off('status', HandleStatus);
+	socket.off('queueCount', HandleQueueStatus);
 	socket.off('jobComplete', HandleJobComplete);
 	socket.off('prbResult');
 }
@@ -2912,6 +2936,12 @@ function InitializePendantPlugin()
 {
 	// create new button
 	$('#controlBtnGrp').before(pendantButton);
+
+	// this exports the ShowPendantDialog function to be used by other macros and allows them to create UI on the pendant screen.
+	// put this at the top of the new macro:
+	// var ShowPendantDialog = $('#pendant').prop('ShowDialog');
+	// and then you can use ShowPendantDialog as normal
+	$('#pendant').prop('ShowDialog', () => { return ShowPendantDialog; });
 
 	// read settings
 	if (localStorage.getItem("PendantSettings"))

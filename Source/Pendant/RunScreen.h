@@ -51,16 +51,19 @@ void RunScreen::Draw( void )
 	const bool bDrawX = bDrawAll || pDrawState->x != g_WorkX;
 	const bool bDrawY = bDrawAll || pDrawState->y != g_WorkY;
 	const bool bDrawZ = bDrawAll || pDrawState->z != g_WorkZ;
-	const bool bDrawF = bDrawAll || pDrawState->f != g_FeedOverride || pDrawState->_override != m_Override;
-	const bool bDrawS = bDrawAll || pDrawState->s != g_SpeedOverride || pDrawState->_override != m_Override;
+	bool bDrawFS = bDrawAll || pDrawState->f != g_FeedOverride || pDrawState->_override != m_Override;
+	bDrawFS = bDrawFS || pDrawState->s != g_SpeedOverride || pDrawState->_override != m_Override;
+	bDrawFS = bDrawFS || (m_Override != 0 && (pDrawState->rf != g_RealFeed || pDrawState->rs != g_RealSpeed));
 	pDrawState->x = g_WorkX;
 	pDrawState->y = g_WorkY;
 	pDrawState->z = g_WorkZ;
 	pDrawState->f = g_FeedOverride;
 	pDrawState->s = g_SpeedOverride;
+	pDrawState->rf = g_RealFeed;
+	pDrawState->rs = g_RealSpeed;
 	pDrawState->_override = m_Override;
 #else
-	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawF = true, bDrawS = true, bDrawAll = true;
+	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawFS = true, bDrawAll = true;
 #endif
 
 	if (bDrawAll)
@@ -125,37 +128,50 @@ void RunScreen::Draw( void )
 		DrawText(0, 3, g_StrZ);
 	}
 
-	if (bDrawF)
+	if (bDrawFS)
 	{
-		Sprintf(g_TextBuf, "%3d", g_FeedOverride);
+#if PARTIAL_SCREEN_UPDATE
+		if (!bDrawAll)
+		{
+			SetDrawColor(0);
+			DrawBox(0, g_Rows[4] - 1, 128, 10);
+			SetDrawColor(1);
+		}
+#endif
+		Sprintf(g_TextBuf, "F %3d%%", g_FeedOverride);
 		if (m_Override == BUTTON_FEED)
 		{
-			DrawText(0, 4, g_StrBoldF);
-			DrawTextBold(2, 4, g_TextBuf);
-			DrawText(5, 4, g_StrBoldPercent);
+			DrawTextBold(0, 4, g_TextBuf);
+			if (g_RealFeed != 0)
+			{
+				int8_t len = Sprintf(g_TextBuf, "%dmm/min", g_RealFeed);
+				DrawBox(49, g_Rows[4] - 1, len * 7 + 2, 10);
+				SetDrawColor(0);
+				DrawText(7, 4, g_TextBuf);
+				SetDrawColor(1);
+			}
 		}
-		else
+		else if (m_Override != BUTTON_SPEED || g_RealSpeed == 0)
 		{
-			DrawText(0, 4, g_StrF);
-			DrawText(2, 4, g_TextBuf);
-			DrawText(5, 4, g_StrPercent);
+			DrawText(0, 4, g_TextBuf);
 		}
-	}
 
-	if (bDrawS)
-	{
-		Sprintf(g_TextBuf, "%3d", g_SpeedOverride);
+		Sprintf(g_TextBuf, "S %3d%%", g_SpeedOverride);
 		if (m_Override == BUTTON_SPEED)
 		{
-			DrawText(12, 4, g_StrBoldS);
-			DrawTextBold(14, 4, g_TextBuf);
-			DrawText(17, 4, g_StrBoldPercent);
+			DrawTextBold(12, 4, g_TextBuf);
+			if (g_RealSpeed != 0)
+			{
+				int8_t len = Sprintf(g_TextBuf, "%drpm", g_RealSpeed);
+				DrawBox(77 - len * 7, g_Rows[4] - 1, len * 7 + 2, 10);
+				SetDrawColor(0);
+				DrawText(11 - len, 4, g_TextBuf);
+				SetDrawColor(1);
+			}
 		}
-		else
+		else if (m_Override != BUTTON_FEED || g_RealFeed == 0)
 		{
-			DrawText(12, 4, g_StrS);
-			DrawText(14, 4, g_TextBuf);
-			DrawText(17, 4, g_StrPercent);
+			DrawText(12, 4, g_TextBuf);
 		}
 	}
 }
@@ -185,6 +201,7 @@ void RunScreen::Update( unsigned long time )
 				return;
 			}
 		}
+
 		if (time - m_OverrideTimer > OVERRIDE_TIMER)
 		{
 			m_OverrideTimer = 0;

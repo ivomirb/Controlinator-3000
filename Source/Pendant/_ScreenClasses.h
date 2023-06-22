@@ -366,6 +366,7 @@ private:
 	ScreenState DecodeState( void ) const;
 
 	const uint16_t OVERRIDE_TIMER = 10000; // dismiss the override if not used for 10 seconds
+	const uint16_t REAL_VALUE_TIMER = 10000; // show the real value 2 seconds after the last change
 
 	unsigned long m_OverrideTimer;
 	uint8_t m_Override : 4; // 0, BUTTON_FEED, BUTTON_SPEED
@@ -376,6 +377,7 @@ private:
 	{
 		float x, y, z;
 		uint16_t f, s;
+		uint16_t rf, rs;
 		bool bShowInches;
 		ScreenState screenState;
 		uint8_t _override;
@@ -434,11 +436,14 @@ public:
 		BUTTON_BACK = 7,
 	};
 
+	static const int ZPROBE_INACTIVITY_TIMER = 30000; // 30 seconds of inactivity will exit the jog screen
+
 	uint8_t m_bConfirmed : 1;
 	uint8_t m_bJoggingLocked : 1;
 	uint8_t m_bJoggingUp : 1;
 	uint8_t m_bJoggingDown : 1;
 	uint8_t m_ProbeMode : 2;
+	unsigned long m_LastInputTime;
 
 #if PARTIAL_SCREEN_UPDATE
 	struct DrawState

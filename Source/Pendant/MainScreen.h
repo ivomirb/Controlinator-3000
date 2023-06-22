@@ -60,7 +60,7 @@ void MainScreen::Draw( void )
 		}
 	}
 
-	u8g2.setColorIndex(1);
+	SetDrawColor(1);
 	if (bDrawX)
 	{
 		PrintX(g_TextBuf);

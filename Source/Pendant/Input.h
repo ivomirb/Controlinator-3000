@@ -83,6 +83,7 @@ void ReleaseAllButtons( void )
 			g_ButtonChangeTimers[i] = 0xFFFF; // the button will be considered off until it is pressed again
 		}
 	}
+	g_ButtonDown = 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

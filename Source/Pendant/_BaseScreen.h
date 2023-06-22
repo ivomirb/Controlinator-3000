@@ -71,6 +71,7 @@ protected:
 		uint16_t buttonHold;
 		uint16_t buttonDown;
 		MachineStatus machineStatus;
+		int8_t jobProgress;
 		bool bDrawAll;
 
 		uint8_t custom[32]; // for use by the current screen, initialized to 0xFF
@@ -120,7 +121,8 @@ void BaseScreen::ClearScreen( void )
 	s_DrawState.bDrawAll |= s_DrawState.buttonState != g_ButtonState ||
 		s_DrawState.buttonHold != g_ButtonHold ||
 		s_DrawState.buttonDown != g_ButtonDown ||
-		s_DrawState.machineStatus != g_MachineStatus;
+		s_DrawState.machineStatus != g_MachineStatus ||
+		s_DrawState.jobProgress != g_JobProgress;
 	if (!s_DrawState.bDrawAll)
 	{
 		return;
@@ -137,6 +139,7 @@ void BaseScreen::UpdateScreen( void )
 	s_DrawState.buttonHold = g_ButtonHold;
 	s_DrawState.buttonDown = g_ButtonDown;
 	s_DrawState.machineStatus = g_MachineStatus;
+	s_DrawState.jobProgress = g_JobProgress;
 	s_DrawState.bDrawAll = false;
 }
 #endif
@@ -205,13 +208,17 @@ void BaseScreen::DrawMachineStatusInt( void )
 	{
 		uint8_t x = (50 - (titleLen * 7)) / 2;
 		DrawBox(x - 2, 0, titleLen * 7 + 4, 10);
-		SetColorIndex(0);
+		SetDrawColor(0);
 		DrawTextXY(x, 1, title);
-		SetColorIndex(1);
+		SetDrawColor(1);
 	}
 #endif
 	{
 		int8_t len = GetStatusNameLen(g_MachineStatus);
+		if (g_MachineStatus == STATUS_RUN && g_bJobRunning && g_JobProgress != -1)
+		{
+			len += 5;
+		}
 #if DRAW_SCREEN_TITLE
 		uint8_t x = 55;
 #else
@@ -219,6 +226,11 @@ void BaseScreen::DrawMachineStatusInt( void )
 #endif
 		DrawTextXY(x, 0, ROMSTR("["));
 		DrawTextXY(x + 7, 0, GetStatusName(g_MachineStatus));
+		if (g_MachineStatus == STATUS_RUN && g_bJobRunning && g_JobProgress != -1)
+		{
+			Sprintf(g_TextBuf, " %3d%%", g_JobProgress);
+			DrawTextXY(x + 28, 0, g_TextBuf);
+		}
 		DrawTextXY(x + len * 7 + 7, 0, ROMSTR("]"));
 		DrawBox(0, 10, 128, 1);
 	}
@@ -226,7 +238,7 @@ void BaseScreen::DrawMachineStatusInt( void )
 
 void BaseScreen::DrawUnusedButtons( uint16_t mask )
 {
-	SetColorIndex(1);
+	SetDrawColor(1);
 	for (uint16_t i = 0; i < 8; i++)
 	{
 		if (TestBit(mask, i))
@@ -246,7 +258,7 @@ void BaseScreen::DrawUnusedButtons( uint16_t mask )
 void BaseScreen::DrawButtonInt( uint8_t button, const char *label, uint8_t labelLen, bool bHold, bool bRomStr )
 {
 	Assert(Strlen(label) == labelLen);
-	SetColorIndex(1);
+	SetDrawColor(1);
 	if (button < 4)
 	{
 		// left side
@@ -257,7 +269,7 @@ void BaseScreen::DrawButtonInt( uint8_t button, const char *label, uint8_t label
 			if (TestBit(g_ButtonDown, button))
 			{
 				DrawBox(0, y - 1, labelLen*7 + 9, 10);
-				SetColorIndex(0);
+				SetDrawColor(0);
 			}
 			DrawTextXY(0, y, g_StrHold);
 			x++;
@@ -274,7 +286,7 @@ void BaseScreen::DrawButtonInt( uint8_t button, const char *label, uint8_t label
 			if (TestBit(g_ButtonDown, button))
 			{
 				DrawBox(x*7, y - 1, labelLen*7 + 9, 10);
-				SetColorIndex(0);
+				SetDrawColor(0);
 			}
 			DrawTextXY(17*7 + 2, y, g_StrHold);
 			x--;
