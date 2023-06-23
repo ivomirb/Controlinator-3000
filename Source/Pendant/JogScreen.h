@@ -13,7 +13,14 @@ JogScreen::ActiveState *JogScreen::GetActiveState( void )
 
 void JogScreen::SetAxis( uint8_t axis )
 {
-	GetActiveState()->m_Axis = axis;
+	auto *pState = GetActiveState();
+	uint8_t old = pState->m_Axis;
+	if (old == 3 && axis != 3)
+	{
+		Serial.print(g_StrJOG2);
+		Serial.println(ROMSTR("JXY0,0"));
+	}
+	pState->m_Axis = axis;
 }
 
 JogScreen::JogScreen( void )
@@ -308,7 +315,7 @@ void JogScreen::Update( unsigned long time )
 			}
 		}
 	}
-	else
+	else if (pState->m_Axis == 3)
 	{
 		// XY jogging
 		int8_t x, y;
@@ -357,6 +364,11 @@ void JogScreen::Activate( unsigned long time )
 	pState->m_bShowAlign = false;
 	GetJoystick(&pState->m_OldJoyX, &pState->m_OldJoyY);
 	EncoderDrainValue();
+}
+
+void JogScreen::Deactivate( void )
+{
+	SetAxis(0);
 }
 
 // Parses the jog step rate string from the PC - |<rate1>|<rate2> ... - up to 5

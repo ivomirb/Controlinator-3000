@@ -156,6 +156,7 @@ public:
 	virtual void Draw( void ) override;
 	virtual void Update( unsigned long time ) override;
 	virtual void Activate( unsigned long time ) override;
+	virtual void Deactivate( void ) override;
 
 	void SetAxis( uint8_t axis );
 
