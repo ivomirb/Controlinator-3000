@@ -29,9 +29,9 @@ const PENDANT_VERSION = "1.0";
 const PENDANT_BAUD_RATE = 38400;
 
 // Must match Input.h
-const JOYSTICK_STEPS = 10;
+const JOYSTICK_STEPS = 100;
 
-const COM_LOG_LEVEL = 2; // 0 - none, 1 - commands, 2 - everything, 3 - everything+ACK
+const COM_LOG_LEVEL = 0; // 0 - none, 1 - commands, 2 - everything, 3 - everything+ACK
 
 const {
 	SerialPort
@@ -66,6 +66,7 @@ var g_LastProbeZ;
 var g_SafeStopPending = 0; // 0 - ignore, 1 - clear on idle, 2 - don't clear on idle
 var g_LastBusyTime = undefined;
 var g_LastUpdateTime = undefined;
+var g_bOkEventSupported = false; // the stock Control sofware doesn't send "ok" event. a custom version might
 
 // This table match the names and order in MachineStatus.h
 const g_StatusMap =
@@ -290,6 +291,20 @@ function IsStableIdle()
 	return false;
 }
 
+// Handles the "ok" event from the Control software. The stock version of the software doesn't send that event.
+// You will need a custom version that does
+function HandleOk(command)
+{
+	if (typeof(command) == 'string')
+	{
+		g_bOkEventSupported = true;
+		if (g_JogXYState != undefined && command.startsWith("$J="))
+		{
+			UpdateJogXY();
+		}
+	}
+}
+
 // Handles the job completion event
 function HandleJobComplete(data)
 {
@@ -304,16 +319,18 @@ function HandleJobComplete(data)
 		return;
 	}
 
-	// if a job completed within 300ms of canceling the jog, cancel again. there is a race condition with canceling not
-	// working if there is a command currently being processed. afterwards Grbl sends 'ok', which triggers a job completion event
-	if (data.failed && g_JogCancelPendingTime != undefined)
+	if (!g_bAdvancedJogXY)
 	{
-		if (Date.now() - g_JogCancelPendingTime < 300)
+		// if the "ok" event is not supported, we use a heuristic to detect when a command is processed and it is safe to cancel the current jog
+		if (data.failed && g_JogCancelPendingTime != undefined)
 		{
-			socket.emit('stop', {stop: false, jog: true, abort: false});
+			if (Date.now() - g_JogCancelPendingTime < 300)
+			{
+				socket.emit('stop', {stop: false, jog: true, abort: false});
+			}
+			g_JogCancelPendingTime = undefined;
+			return;
 		}
-		g_JogCancelPendingTime = undefined;
-		return;
 	}
 
 	if (!data.failed && data.jobStartTime && data.jobEndTime && laststatus.comms.runStatus != "Alarm")
@@ -346,8 +363,8 @@ function HandleJobComplete(data)
 function HandleHandshake()
 {
 	ClearStatusCache();
-	PushStatus(laststatus);
 	PushSettings(false);
+	PushStatus(laststatus);
 }
 
 const MAX_BUTTON_SIZE = 14; // must match the DialogScreen class
@@ -564,6 +581,9 @@ var g_JogXYLocation; // last known joystick jog location in MCS. always in mm
 var g_JogXYTimer;
 var g_JogJoystick = {X: 0, Y: 0}; // last received joystick position
 var g_JogCancelPendingTime = undefined; // to cancel jog on next job complete
+var g_bAdvancedJogXY = false; // set to true if the "ok" event is supported. it makes the jogging a bit smoother and more responsive
+var g_JogXYState = undefined; // true - running, false - stopping, undefined - inactive
+var g_JogXYTime;
 
 // Called periodically to process the queue of wheel jog requests
 function ProcessJogQueue()
@@ -652,55 +672,80 @@ function BeginJogXY()
 		X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
 		Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
 	};
-	// fill the queue with tiny jogs
-	for (var i = 0; i < 20; i++)
-	{
-		var speed = (i+5)/25; // gradually increase the speed
-		QueueJogXY(g_JogJoystick.X*speed, g_JogJoystick.Y*speed, 0.02);
-	}
-}
 
-// Cancels jogging in the joystick
-function CancelJogXY()
-{
-	g_JogXYLocation = undefined;
-	if (g_JogXYTimer != undefined)
+	g_bAdvancedJogXY = g_bOkEventSupported;
+	if (g_bAdvancedJogXY)
 	{
-		clearInterval(g_JogXYTimer);
-		g_JogXYTimer = undefined;
+		g_JogXYTime = Date.now() - 200;
+		g_JogXYState = true;
+		UpdateJogXY();
+	}
+	else
+	{
+		// if the "ok" event is not supported, pre-fill the queue with tiny jogs to keep Grbl busy, as we don't quite
+		// know when a command is processed and have to keep pushing jogs into the queue
+		for (var i = 0; i < 20; i++)
+		{
+			var speed = (i+5)/25; // gradually increase the speed
+			QueueJogXY(g_JogJoystick.X*speed, g_JogJoystick.Y*speed, 0.02);
+		}
 	}
 }
 
 // Queues a jog increment. dt - time duration in seconds
+// Returns true if a command was queued
 function QueueJogXY(joyX, joyY, dt)
 {
 	if (joyX == 0 && joyY == 0)
 	{
-		return;
+		return false;
 	}
 	var feedXY = grblParams["$110"] / 60; // mm/sec
-
 	// normalize joyX and joyY from 20x20 square to the unit circle
 	var slope = Math.abs(joyX) < Math.abs(joyY) ? joyX/joyY : joyY/joyX;
 	var maxXY = Math.sqrt(slope*slope + 1) * JOYSTICK_STEPS;
-
 	// requested move in mm
 	var newX = ClampSafeAbsoluteMove(g_JogXYLocation.X, joyX * feedXY * dt / maxXY, 'X', false);
 	var newY = ClampSafeAbsoluteMove(g_JogXYLocation.Y, joyY * feedXY * dt / maxXY, 'Y', false);
 	var dx = newX - g_JogXYLocation.X;
 	var dy = newY - g_JogXYLocation.Y;
-
-	if (dx != 0 || dy != 0)
+	if (dx == 0 && dy == 0)
 	{
-		var feed = 60 * Math.min(Math.sqrt(dx * dx + dy * dy) / dt, feedXY);
-
-		// absolute machine move, mm
-		var gcode = "$J=G53 G90 G21" + " X" + newX.toFixed(3) + " Y" + newY.toFixed(3) + " F" + feed.toFixed(0);
-		sendGcode(gcode);
+		return false;
 	}
+
+	var feed = 60 * Math.min(Math.sqrt(dx * dx + dy * dy) / dt, feedXY);
+	// absolute machine move, mm
+	var gcode = "$J=G53 G90 G21" + " X" + newX.toFixed(3) + " Y" + newY.toFixed(3) + " F" + feed.toFixed(0);
+	sendGcode(gcode);
 	g_JogXYLocation.X = newX;
 	g_JogXYLocation.Y = newY;
+	return true;
+}
 
+// Updates the advanced jog state after "ok" event is received
+function UpdateJogXY()
+{
+	if (laststatus.comms.runStatus != "Idle" && laststatus.comms.runStatus != "Jog" && laststatus.comms.runStatus != "Running")
+	{
+		g_JogXYState = false;
+	}
+	if (g_JogXYState == true)
+	{
+		var t = Date.now();
+		var dt = (t - g_JogXYTime) / 1000;
+		g_JogXYTime = t;
+
+		if (!QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, dt))
+		{
+			g_JogXYState = undefined;
+		}
+	}
+	else if (g_JogXYState == false)
+	{
+		socket.emit('stop', {stop: false, jog: true, abort: false});
+		g_JogXYState = undefined;
+	}
 }
 
 // Handles the jog commands from the pendant
@@ -869,52 +914,96 @@ function HandleJogCommand(command)
 		// joystick input
 		var xy = command.substring(3).split(',');
 		g_JogJoystick = {X: xy[0], Y: xy[1]};
+
 		if (xy[0] == 0 && xy[1] == 0)
 		{
 			// joystick is released, stop immediately
-			if (g_JogXYLocation != undefined && !IsStableIdle())
+			if (g_bAdvancedJogXY)
 			{
-				socket.emit('stop', {stop: false, jog: true, abort: false});
-				if (laststatus.comms.runStatus != "Idle")
+				// if "ok" is supported, set the state to false, which will issue a cancel command on the next "ok" event
+				g_JogXYState = false;
+				if (g_JogXYTimer != undefined)
 				{
-					g_JogCancelPendingTime = Date.now();
+					clearInterval(g_JogXYTimer);
+					g_JogXYTimer = undefined;
 				}
 			}
-			CancelJogXY();
+			else
+			{
+				// otherwise stop immediately, and queue up a second stop when the job is completed, just in case
+				if (g_JogXYLocation != undefined && !IsStableIdle())
+				{
+					socket.emit('stop', {stop: false, jog: true, abort: false});
+					if (laststatus.comms.runStatus != "Idle")
+					{
+						g_JogCancelPendingTime = Date.now();
+					}
+				}
+				g_JogXYLocation = undefined;
+				if (g_JogXYTimer != undefined)
+				{
+					clearInterval(g_JogXYTimer);
+					g_JogXYTimer = undefined;
+				}
+			}
 			return;
 		}
 
 		if (g_JogXYTimer == undefined)
 		{
-			if (IsStableIdle() && (xy[0] * xy[0] + xy[1] * xy[1]) * 4 > JOYSTICK_STEPS * JOYSTICK_STEPS )
+			if (g_bOkEventSupported)
 			{
-				BeginJogXY();
-			}
-			g_JogXYTime = g_JogXYLocation == undefined ? undefined : Date.now();
-			g_JogXYTimer = setInterval(function()
-			{
-				if (g_JogXYLocation == undefined)
+				// if "ok" is supported, just begin the jog on the next stable idle. the "ok" event handler will keep the jogs coming
+				if (g_JogXYState == undefined)
 				{
-					if (laststatus.comms.runStatus == "Idle")
+					if (IsStableIdle())
 					{
 						BeginJogXY();
-						g_JogXYTime = Date.now();
+					}
+					else
+					{
+						g_JogXYTimer = setInterval(function()
+						{
+							if (IsStableIdle())
+							{
+								BeginJogXY();
+								clearInterval(g_JogXYTimer);
+								g_JogXYTimer = undefined;
+							}
+						}, 100);
 					}
 				}
-				else
+			}
+			else
+			{
+				// otherwise start a persistent interval that will keep queueing jogs ever 100ms
+				if (IsStableIdle()/* && (xy[0] * xy[0] + xy[1] * xy[1]) * 4 > JOYSTICK_STEPS * JOYSTICK_STEPS*/)
 				{
-					var t = Date.now();
-					QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, (t - g_JogXYTime) / 1000);
-					g_JogXYTime = t;
+					BeginJogXY();
 				}
-			}, 100);
+				g_JogXYTime = g_JogXYLocation == undefined ? undefined : Date.now();
+				g_JogXYTimer = setInterval(function()
+				{
+					if (g_JogXYLocation == undefined)
+					{
+						if (laststatus.comms.runStatus == "Idle")
+						{
+							BeginJogXY();
+							g_JogXYTime = Date.now();
+						}
+					}
+					else
+					{
+						var t = Date.now();
+						QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, (t - g_JogXYTime) / 1000);
+						g_JogXYTime = t;
+					}
+				}, 100);
+			}
 		}
-
 		return;
 	}
 }
-
-var g_JogXYTime;
 
 // Shows the job menu
 function HandleJobMenu()
@@ -1755,6 +1844,7 @@ function TryComHandler(data)
 			socket.on('status', HandleStatus);
 			socket.on('queueCount', HandleQueueStatus);
 			socket._callbacks["$jobComplete"].splice(0,0, HandleJobComplete);
+			socket.on('ok', HandleOk);
 
 			g_CurrentTryPort = undefined;
 			g_CurrentTryParser = undefined;
@@ -1872,6 +1962,7 @@ window.DisconnectPendant = function()
 	socket.off('status', HandleStatus);
 	socket.off('queueCount', HandleQueueStatus);
 	socket.off('jobComplete', HandleJobComplete);
+	socket.off('ok', HandleOk);
 	socket.off('prbResult');
 }
 

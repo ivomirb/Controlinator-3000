@@ -3,7 +3,7 @@
 const uint8_t BUTTON_JOYSTICK = 8;
 const uint8_t BUTTON_ABORT = 9;
 
-const int JOYSTICK_STEPS = 10; // number of steps in the joystick range
+const int JOYSTICK_STEPS = 100; // number of steps in the joystick range
 
 #ifndef BUTTON_COUNT
 #define BUTTON_COUNT 10

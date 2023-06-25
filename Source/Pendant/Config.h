@@ -6,7 +6,11 @@
 //                         Greatly increses the framerate. Requires U8G2_FULL_BUFFER
 
 // USE_NEW_ENCODER - Set to 1 to use the full NewEncoder library. Otherise a trimmed-down version of the code is used
-//                   to save memory and reduce code dependencies
+//                   to save memory and reduce code dependencies. Requires modification of NewEncoder library to support ATmega4808
+
+// DISABLE_WELCOME_SCREEN, DISABLE_MACRO_SCREEN, DISABLE_CALIBRATION_SCREEN - disable individual screens to save memory
+//         (for experiments that need more memory)
+
 
 #if defined(__AVR_ATmega328P__) // Arduino Nano with ATmega328P
 
