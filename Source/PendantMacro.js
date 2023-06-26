@@ -68,7 +68,7 @@ var g_LastBusyTime = undefined;
 var g_LastUpdateTime = undefined;
 var g_bOkEventSupported = false; // the stock Control sofware doesn't send "ok" event. a custom version might
 
-// This table match the names and order in MachineStatus.h
+// This table must match the names and order in MachineStatus.h
 const g_StatusMap =
 {
 	"Unknown": 0,
