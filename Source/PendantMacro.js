@@ -1,4 +1,5 @@
-// For reference: https://github.com/gnea/grbl/blob/master/doc/markdown/commands.md
+// OpenBuilds CONTROL Javascript macro for interfacing with the Controlinator 3000 pendant
+// https://github.com/ivomirb/Controlinator-3000
 
 // Normally the Arduino Nano is programmed via the USB cable. This requires the Arduino to reset when a serial connection is initiated.
 // If this is the case, set the value to true. The PC will wait 2 seconds after opening the connection before trying to communicate.
