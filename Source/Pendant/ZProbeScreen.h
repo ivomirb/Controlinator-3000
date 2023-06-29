@@ -46,6 +46,7 @@ void ZProbeScreen::Draw( void )
 			DrawButton(BUTTON_PROBE, ROMSTR("Probe"), 5, true);
 		}
 
+		SetDrawColor(1);
 		DrawText(0, 1, m_bConfirmed ? g_StrChecked : g_StrUnchecked);
 
 		if (g_bCanShowStop)

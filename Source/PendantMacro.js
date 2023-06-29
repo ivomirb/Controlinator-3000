@@ -346,10 +346,10 @@ function HandleJobComplete(data)
 		return;
 	}
 
-	if (data.jobCompletedMsg.startsWith("Pendant Probe"))
+	if (data.jobCompletedMsg.startsWith("Probe Complete"))
 	{
 		// probing job
-		var probeType = Number(data.jobCompletedMsg[13]);
+		var probeType = Number(data.jobCompletedMsg[14]);
 		data.jobCompletedMsg = "";
 		if (!data.failed)
 		{
@@ -921,7 +921,10 @@ function HandleJogCommand(command)
 			if (g_bAdvancedJogXY)
 			{
 				// if "ok" is supported, set the state to false, which will issue a cancel command on the next "ok" event
-				g_JogXYState = false;
+				if (g_JogXYState == true)
+				{
+					g_JogXYState = false;
+				}
 				if (g_JogXYTimer != undefined)
 				{
 					clearInterval(g_JogXYTimer);
@@ -1329,7 +1332,7 @@ function HandleProbeCommand(command)
 					if (probeType == 0 && g_PendantSettings.zProbe.style == "single" && !g_PendantSettings.zProbe.useProbeResult)
 					{
 						var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
-						gcode += "\nG10 G21 P0 L20 Z" + zProbeThickness.toFixed(3);
+						gcode += "\nG10 G21 P0 L20 Z" + Number(zProbeThickness).toFixed(3);
 					}
 					var maxZ = GetSafeLimits('Z').max;
 					var travel = settings.retract1.travel;
@@ -1359,7 +1362,7 @@ function HandleProbeCommand(command)
 						socket.emit('runJob', {
 							data: gcode,
 							isJob: false,
-							completedMsg: "Pendant Probe" + probeType,
+							completedMsg: "Probe Complete" + probeType,
 							fileName: ""
 						});
 						socket.off('prbResult');
@@ -1373,7 +1376,7 @@ function HandleProbeCommand(command)
 					if (probeType == 0 && !g_PendantSettings.zProbe.useProbeResult)
 					{
 						var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
-						gcode += "\nG10 G21 P0 L20 Z" + zProbeThickness.toFixed(3);
+						gcode += "\nG10 G21 P0 L20 Z" + Number(zProbeThickness).toFixed(3);
 					}
 					var maxZ = GetSafeLimits('Z').max;
 					var travel = settings.retract2.travel;
@@ -1389,7 +1392,7 @@ function HandleProbeCommand(command)
 					socket.emit('runJob', {
 						data: gcode,
 						isJob: false,
-						completedMsg: "Pendant Probe" + probeType,
+						completedMsg: "Probe Complete" + probeType,
 						fileName: ""
 					});
 					socket.off('prbResult');
