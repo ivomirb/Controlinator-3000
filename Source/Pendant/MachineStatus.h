@@ -4,6 +4,7 @@
 enum MachineStatus
 {
 	STATUS_UNKNOWN, // none of the below
+	STATUS_DISCONNECTED, // machine not connected
 
 	STATUS_JOG,
 	STATUS_RUN,
@@ -24,17 +25,17 @@ enum MachineStatus
 	STATUS_SLEEP,
 	STATUS_STOPPED, // from OB CONTROL
 	STATUS_PAUSED, // from OB CONTROL
-	STATUS_DISCONNECTED, // machine not connected
 
 	STATUS_COUNT,
 };
 
-MachineStatus g_MachineStatus;
+MachineStatus g_MachineStatus = STATUS_UNKNOWN;
 
 // This table match the names and order in Javascript
 const char g_StatusNames[] PROGMEM = 
 {
-	"Unknown\0"
+	"???\0"
+	"???\0"
 
 	"Jog\0"
 	"Run\0"
@@ -54,7 +55,6 @@ const char g_StatusNames[] PROGMEM =
 	"Sleep\0"
 	"Stopped\0"
 	"Paused\0"
-	"Disconnected\0"
 };
 
 static_assert(sizeof(g_StatusNames) < 256, "");

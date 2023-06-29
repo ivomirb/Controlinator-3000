@@ -13,7 +13,14 @@ JogScreen::ActiveState *JogScreen::GetActiveState( void )
 
 void JogScreen::SetAxis( uint8_t axis )
 {
-	GetActiveState()->m_Axis = axis;
+	auto *pState = GetActiveState();
+	uint8_t old = pState->m_Axis;
+	if (old == 3 && axis != 3)
+	{
+		Serial.print(g_StrJOG2);
+		Serial.println(ROMSTR("JXY0,0"));
+	}
+	pState->m_Axis = axis;
 }
 
 JogScreen::JogScreen( void )
@@ -111,16 +118,16 @@ void JogScreen::Draw( void )
 		PrintX(g_TextBuf);
 		if (pState->m_Axis & 1)
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawBox(0, g_Rows[1] - 1, 8, 10);
-			SetColorIndex(0);
+			SetDrawColor(0);
 			DrawText(0, 1, g_StrBoldX);
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawTextBold(2, 1, g_TextBuf);
 		}
 		else
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawText(0, 1, g_StrX);
 			DrawText(2, 1, g_TextBuf);
 		}
@@ -131,16 +138,16 @@ void JogScreen::Draw( void )
 		PrintY(g_TextBuf);
 		if (pState->m_Axis & 2)
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawBox(0, g_Rows[2] - 1, 8, 10);
-			SetColorIndex(0);
+			SetDrawColor(0);
 			DrawText(0, 2, g_StrBoldY);
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawTextBold(2, 2, g_TextBuf);
 		}
 		else
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawText(0, 2, g_StrY);
 			DrawText(2, 2, g_TextBuf);
 		}
@@ -151,16 +158,16 @@ void JogScreen::Draw( void )
 		PrintZ(g_TextBuf);
 		if (pState->m_Axis & 4)
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawBox(0, g_Rows[3] - 1, 8, 10);
-			SetColorIndex(0);
+			SetDrawColor(0);
 			DrawText(0, 3, g_StrBoldZ);
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawTextBold(2, 3, g_TextBuf);
 		}
 		else
 		{
-			SetColorIndex(1);
+			SetDrawColor(1);
 			DrawText(0, 3, g_StrZ);
 			DrawText(2, 3, g_TextBuf);
 		}
@@ -180,7 +187,7 @@ void JogScreen::Update( unsigned long time )
 	pState->m_bShowStop = g_bCanShowStop && (time - pState->m_LastInputTime > SHOW_STOP_TIME); // half second of no idle and no input
 	if (pState->m_bShowActions)
 	{
-		if (g_MachineStatus < STATUS_IDLE)
+		if (g_MachineStatus != STATUS_IDLE)
 		{
 			pState->m_bShowActions = false; // hide actions as soon as not idle
 		}
@@ -308,7 +315,7 @@ void JogScreen::Update( unsigned long time )
 			}
 		}
 	}
-	else
+	else if (pState->m_Axis == 3)
 	{
 		// XY jogging
 		int8_t x, y;
@@ -357,6 +364,11 @@ void JogScreen::Activate( unsigned long time )
 	pState->m_bShowAlign = false;
 	GetJoystick(&pState->m_OldJoyX, &pState->m_OldJoyY);
 	EncoderDrainValue();
+}
+
+void JogScreen::Deactivate( void )
+{
+	SetAxis(0);
 }
 
 // Parses the jog step rate string from the PC - |<rate1>|<rate2> ... - up to 5

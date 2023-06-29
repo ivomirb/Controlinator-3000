@@ -15,7 +15,7 @@ void MacroScreen::Draw( void )
 		DrawButton(i, name, Strlen(name), TestBit(m_MacroHoldFlags, i));
 	}
 
-	SetColorIndex(1);
+	SetDrawColor(1);
 	DrawText(14, 4, g_StrBack);
 }
 

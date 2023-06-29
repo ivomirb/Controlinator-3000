@@ -37,6 +37,7 @@ bool g_bWorkSpace = true;
 bool g_bShowInches = true;
 bool g_bJobRunning = false;
 bool g_bRecentlyHomed = false;
+int8_t g_JobProgress = -1;
 
 enum
 {
@@ -71,7 +72,9 @@ MacroScreen g_MacroScreen;
 MainScreen g_MainScreen;
 ProbeMenuScreen g_ProbeMenuScreen;
 RunScreen g_RunScreen;
+#ifndef DISABLE_WELCOME_SCREEN
 WelcomeScreen g_WelcomeScreen;
+#endif
 ZProbeScreen g_ZProbeScreen;
 
 // This is outside of _BaseScreen.h because it needs access to the other screens
@@ -81,7 +84,9 @@ void BaseScreen::CloseScreen( void )
 	{
 		if (!g_bConnected || g_MachineStatus == STATUS_DISCONNECTED)
 		{
+#ifndef DISABLE_WELCOME_SCREEN
 			g_WelcomeScreen.Activate(g_CurrentTime);
+#endif
 		}
 		else if (g_MachineStatus == STATUS_ALARM)
 		{
@@ -161,6 +166,8 @@ void ParseStatus( const char *status )
 	g_SpeedOverride = atoi(status); status = strchr(status, ',') + 1;
 	g_RealFeed = atoi(status); status = strchr(status, ',') + 1;
 	g_RealSpeed = atoi(status);
+	status = strchr(status, '|');
+	g_JobProgress = status ? atoi(status + 1) : -1;
 }
 
 // Parses the STATUS2: string from the PC
@@ -216,6 +223,7 @@ void ProcessCommand( const char *command, unsigned long time )
 	if (strcmp(command, "BYE") == 0)
 	{
 		g_bConnected =false;
+		g_MachineStatus = STATUS_DISCONNECTED;
 		return;
 	}
 
@@ -310,10 +318,12 @@ void setup( void )
 	InitializeInput();
 	InitializeStatusStrings();
 	ReadRomSettings();
-	u8g2.begin();
+	InitializeGraphics();
 	InitializeEncoder();
 	g_CurrentTime = millis();
+#ifndef DISABLE_WELCOME_SCREEN
 	g_WelcomeScreen.Activate(g_CurrentTime);
+#endif
 }
 
 int g_Frame = 0;
@@ -375,7 +385,11 @@ void loop( void )
 		else
 #endif
 		{
+#ifndef DISABLE_WELCOME_SCREEN
 			g_WelcomeScreen.Activate(time);
+#else
+			g_MainScreen.Activate(time);
+#endif
 		}
 	}
 	else if (g_MachineStatus == STATUS_ALARM)
@@ -388,7 +402,7 @@ void loop( void )
 		bScreenSelected = false;
 	}
 
-	if (g_MachineStatus >= STATUS_IDLE)
+	if (g_MachineStatus == STATUS_IDLE)
 	{
 		g_LastIdleTime = time;
 	}
@@ -397,7 +411,7 @@ void loop( void )
 		g_LastBusyTime = time;
 	}
 
-	g_bCanShowStop = (time - g_LastIdleTime > SHOW_STOP_TIME);
+	g_bCanShowStop = g_MachineStatus > STATUS_DISCONNECTED && (time - g_LastIdleTime > SHOW_STOP_TIME);
 
 	// read buttons
 #ifdef EMULATOR
@@ -431,21 +445,21 @@ void loop( void )
 	// draw
 #if U8G2_FULL_BUFFER
 	BaseScreen::ClearScreen();
-	SetColorIndex(1);
+	SetDrawColor(1);
 	BaseScreen::s_pCurrentScreen->Draw();
 #if PARTIAL_SCREEN_UPDATE
 	BaseScreen::UpdateScreen();
 #else
-	u8g2.sendBuffer();
+	u8g2_SendBuffer(&u8g2);
 #endif
 #else
-	u8g2.firstPage();
+	u8g2_FirstPage(&u8g2);
 	do
 	{
-		SetColorIndex(1);
+		SetDrawColor(1);
 		BaseScreen::s_pCurrentScreen->Draw();
 	}
-	while (u8g2.nextPage());
+	while (u8g2_NextPage(&u8g2));
 #endif
 
 	g_Frame++;

@@ -4,7 +4,7 @@
 char g_Screen[64][128];
 char g_ScreenCopy[64][128];
 
-void U8G2::drawXBMP( int x, int y, int w, int h, const BYTE *bitmap )
+void u8g2_t::drawXBMP( int x, int y, int w, int h, const BYTE *bitmap )
 {
 	int stride = (w+7)/8;
 	for (int yy = 0; yy < h; yy++, bitmap += stride)
@@ -22,7 +22,7 @@ void U8G2::drawXBMP( int x, int y, int w, int h, const BYTE *bitmap )
 	}
 }
 
-void U8G2::drawBox( int x, int y, int w, int h )
+void u8g2_t::drawBox( int x, int y, int w, int h )
 {
 	char color = !m_ColorIndex;
 	for (int yy = 0; yy < h; yy++)
@@ -36,13 +36,13 @@ void U8G2::drawBox( int x, int y, int w, int h )
 	}
 }
 
-void U8G2::sendBuffer( void )
+void u8g2_t::sendBuffer( void )
 {
 	memcpy(g_ScreenCopy, g_Screen, sizeof(g_Screen));
 }
 
 #if U8G2_FULL_BUFFER
-void U8G2::updateDisplayArea( int tx, int ty, int tw, int th )
+void u8g2_t::updateDisplayArea( int tx, int ty, int tw, int th )
 {
 	for (int y = ty * 8; y < (ty + th) * 8; y++)
 	{
