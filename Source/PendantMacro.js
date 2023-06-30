@@ -175,7 +175,7 @@ function GenerateStatusString(s)
 	{
 		status = g_StatusMap.Disconnected;
 	}
-	else if (s.comms.connectionStatus == 5)
+	else if (s.comms.connectionStatus == 5 && g_ErrorListeners == undefined)
 	{
 		status = g_StatusMap.Alarm;
 	}
@@ -576,6 +576,7 @@ var g_JogWLocation; // the last submitted target for g_JogAxis
 var g_JogWQueue; // number of queued steps along g_JogAxis
 var g_JogWTimer;
 var g_LastWheelMoveTime;
+var g_ErrorListeners;
 
 // Jogging with joystick
 var g_JogXYLocation; // last known joystick jog location in MCS. always in mm
@@ -586,17 +587,69 @@ var g_bAdvancedJogXY = false; // set to true if the "ok" event is supported. it 
 var g_JogXYState = undefined; // true - running, false - stopping, undefined - inactive
 var g_JogXYTime;
 
-// Called periodically to process the queue of wheel jog requests
-function ProcessJogQueue()
+// Temporary replacement for the default 'toastError' listener, which ignores Error 8 during jogging.
+function HandleJogWError(data)
 {
-	if (g_JogWQueue == 0 && IsStableIdle())
+	if (data.startsWith("error: 8"))
+	{
+		socket.emit('clearAlarm', 0);
+		socket.emit('serialInject', "?");
+		printLog("ERROR 8 HANDLED");
+	}
+	else if (g_ErrorListeners != undefined)
+	{
+		for (var i = 0; i < g_ErrorListeners.length; i++)
+		{
+			g_ErrorListeners[i](data);
+		}
+	}
+}
+
+// Begins jogging with the wheel
+function BeginJogW()
+{
+	var axisL = g_JogAxis.toLowerCase();
+	g_LastBusyTime = Date.now(); // force state as busy
+	g_JogWLocation = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL];
+
+	// HACK: There is a bug in Grbl that sometimes a $J command gets into a Run state instead of Jog. The next $J
+	// will trigger Error 8, because $J is not allowed during the Run state. Here we replace the entire list of
+	// 'toastError' listeners with our own function, which ignores the error. The list will be restored in EndJogW.
+	g_ErrorListeners = Array.from(socket.listeners('toastError'));
+	socket.off('toastError');
+	socket.on('toastError', HandleJogWError);
+}
+
+// Cleanup after jogging with the wheel
+function EndJogW()
+{
+	if (g_JogWTimer != undefined)
 	{
 		clearInterval(g_JogWTimer);
 		g_JogWTimer = undefined;
-		g_JogAxis = undefined;
-		g_bJogInches = undefined;
-		g_JogWLocation = undefined;
-		g_JogWQueue = undefined;
+	}
+	g_JogAxis = undefined;
+	g_bJogInches = undefined;
+	g_JogWLocation = undefined;
+	g_JogWQueue = undefined;
+
+	if (g_ErrorListeners != undefined)
+	{
+		socket.off('toastError');
+		for (var i = 0; i < g_ErrorListeners.length; i++)
+		{
+			socket.on('toastError', g_ErrorListeners[i]);
+		}
+		g_ErrorListeners = undefined;
+	}
+}
+
+// Called periodically to process the queue of wheel jog requests
+function UpdateJogW()
+{
+	if (g_JogWQueue == 0 && IsStableIdle())
+	{
+		EndJogW();
 		return;
 	}
 
@@ -861,7 +914,6 @@ function HandleJogCommand(command)
 
 		var axis = command[2]; // X/Y/Z
 		if (axis < 'X' || axis > 'Z') { return; }
-		var axisL = axis.toLowerCase();
 
 		var mul = command.indexOf('*');
 		var count = Number(command.substring(3, mul));
@@ -875,11 +927,11 @@ function HandleJogCommand(command)
 		if (axis != g_JogAxis || inches != g_bJogInches)
 		{
 			// axis or unit is switched, clear everything
+			EndJogW();
 			g_JogWQueue = 0;
 			g_JogStep = step;
 			g_JogAxis = axis;
 			g_bJogInches = inches;
-			g_JogWLocation = undefined;
 		}
 		else if (step != g_JogStep)
 		{
@@ -892,19 +944,25 @@ function HandleJogCommand(command)
 
 		g_LastWheelMoveTime = Date.now();
 
-		if (g_JogWLocation == undefined)
-		{
-			g_JogWLocation = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL];
-		}
-
 		if (g_JogWTimer == undefined)
 		{
+			g_JogWLocation = undefined;
 			if (IsStableIdle())
 			{
-				g_LastBusyTime = Date.now(); // force state as busy
-				ProcessJogQueue();
+				BeginJogW();
+				UpdateJogW();
 			}
-			g_JogWTimer = setInterval(ProcessJogQueue, 100);
+			g_JogWTimer = setInterval(function()
+			{
+				if (g_JogWLocation == undefined && IsStableIdle())
+				{
+					BeginJogW();
+				}
+				if (g_JogWLocation != undefined)
+				{
+					UpdateJogW();
+				}
+			}, 100);
 		}
 
 		return;

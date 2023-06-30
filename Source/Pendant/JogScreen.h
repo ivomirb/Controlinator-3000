@@ -177,7 +177,7 @@ void JogScreen::Draw( void )
 void JogScreen::Update( unsigned long time )
 {
 	auto *pState = GetActiveState();
-	if (g_MachineStatus < STATUS_IDLE && g_MachineStatus != STATUS_JOG && g_MachineStatus != STATUS_RUNNING)
+	if (g_MachineStatus < STATUS_IDLE && g_MachineStatus != STATUS_JOG && g_MachineStatus != STATUS_RUN && g_MachineStatus != STATUS_RUNNING)
 	{
 		CloseScreen();
 		return;
