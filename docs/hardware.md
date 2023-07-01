@@ -4,30 +4,29 @@
 ## Tl;dr
 Long story short, make the PCB, add a microcontroller, a display, some buttons, a handwheel and a joystick. Place them inside the provided 3D model. Upload the C++ code to the microcontroller and use the Javascript code as a macro for the OpenBuilds Control software.
 
-You can use Arduino Nano, Arduino Nano Every with 4809 chip, or Arduino Nano clone with 4808. The last two have extra memory, which enables better performance.
-Schematic: https://easyeda.com/editor#id=6772a173c7f747c4bd99ec3e6c18ea2e
-PCB: https://easyeda.com/editor#id=7d417a9957d24bc288f2ec065d723912
-Source code: https://github.com/ivomirb/Controlinator-3000/tree/master/Source
+You can use Arduino Nano, Arduino Nano Every with 4809 chip, or Arduino Nano clone with 4808. The last two have extra memory, which enables better performance.  
+Schematic: https://easyeda.com/editor#id=6772a173c7f747c4bd99ec3e6c18ea2e  
+PCB: https://easyeda.com/editor#id=7d417a9957d24bc288f2ec065d723912  
+Source code: https://github.com/ivomirb/Controlinator-3000/tree/master/Source  
 3D models: https://github.com/ivomirb/Controlinator-3000/tree/master/Models
-
 
 ## In detail
 You will need a few electronic components
 
 **Microcontroller:** You need one compatible with Arduino Nano. There are few options with different capabilities. Both 30-pin and 34-pin packages are supported. See the next section for more details.
 
-**Display:** A 2.4” OLED display compatible with the I2C interface. This is the one I used: https://www.aliexpress.us/item/3256805055000425.html
+**Display:** A 2.4” OLED display compatible with the I2C interface. This is the one I used: https://www.aliexpress.us/item/3256805055000425.html  
 **Note:** This particular model requires hardware modification to work correctly. Remove the D2 diode and replace it with a straight wire. Without this it won’t send the ACK signal and it will only work in software mode, which is slow. In my experience most similar screens come in SPI mode out of the box and require hardware modifications to convert to I2C. It is possible to redesign the pendant to use SPI, with some modifications to the PCB design and using an extra digital pin
 
-**Handwheel:** A manual pulse generator like this: https://www.aliexpress.us/item/2251832666651590.html
-You need the 5V version to be compatible with the Arduino. The 4-pin version works best. If you have the 6-pin version it will also work, just ignore the bottom two connectors.
-I actually ended up using the plastic version from here: https://www.aliexpress.us/item/3256801157578368.html
+**Handwheel:** A manual pulse generator like this: https://www.aliexpress.us/item/2251832666651590.html  
+You need the 5V version to be compatible with the Arduino. The 4-pin version works best. If you have the 6-pin version it will also work, just ignore the bottom two connectors.  
+I actually ended up using the plastic version from here: https://www.aliexpress.us/item/3256801157578368.html  
 It is half the weight of the metal wheel (80 grams vs 160), reducing the overall weight of the pendant by 20%
 
 **Joystick:** I am using a regular Arduino joystick that you can find everywhere. Here’s one example: https://www.aliexpress.us/item/2251832496927403.html
 
-**Buttons:** You need eight 8mm buttons. They are the smallest ones I could find that still feel like regular buttons. Also one 16mm button for the Self Destruct at the top. It can be red for dramatic effect
-https://www.aliexpress.us/item/3256801900884791.html
+**Buttons:** You need eight 8mm buttons. They are the smallest ones I could find that still feel like regular buttons. Also one 16mm button for the Self Destruct at the top. It can be red for dramatic effect  
+https://www.aliexpress.us/item/3256801900884791.html  
 https://www.aliexpress.us/item/3256804994691187.html
 
 **Optional reset switch:** You can mount a tiny reset switch that is accessible through a small hole in the front. The existing mount is for this type of switch: https://www.amazon.com/gp/product/B073TYWX86
@@ -40,7 +39,7 @@ A regular Arduino Nano with ATmega 328P. It has 32K ROM and 2K RAM. This is what
 Arduino Nano Every, with ATmega 4809 chip. It has 48K ROM and 6K RAM. The extra memory allows for the display to be mirrored in RAM and to be updated only as needed. This greatly improves the framerate and responsiveness.
 I do not own one and haven’t tested it, however I’m pretty confident it would work, since it is very similar to 4808
 
-An Arduino Every clone with ATmega 4808, like this one: https://www.aliexpress.us/item/3256804681280426.html
+An Arduino Every clone with ATmega 4808, like this one: https://www.aliexpress.us/item/3256804681280426.html  
 It is similar to Arduino Every, however has 4 extra pins, including a UPDI connection that allows programming it without interfering with the USB port. This is what I ended up using in the final version.
 Note: While this model has the same general pinout as Arduino Nano, there are subtle differences. The most notable is that the SCL and SDA pins needed to drive the display are on different pins – D4 and D5 instead of A4 and A5 on the Nano. The PCB can be configured to work with one or the other. See below
 

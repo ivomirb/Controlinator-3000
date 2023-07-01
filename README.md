@@ -3,7 +3,7 @@ CNC handheld pendant for OpenBuilds CONTROL
 
 ![The pendant](/assets/images/main.jpg)
 
-Main features:
+## Main features
 
 * Display current status and position
 * Switch between machine and work coordinates
@@ -16,17 +16,19 @@ Main features:
 * Measure tool length
 * Extensive configuration settings
 
+## Documentation
 
-How to make it: /docs/hardware.md
+How to make it: [/docs/hardware.md](/docs/hardware.md)
 
-How to program it: /docs/sofware.md
+How to program it: [/docs/sofware.md](/docs/sofware.md)
 
-How to configure it: /docs/settings.md
+How to configure it: [/docs/settings.md](/docs/settings.md)
 
-How to use it: /docs/usage.md
+How to use it: [/docs/usage.md](/docs/usage.md)
 
-Issues and future developments: /docs/future.md
+Issues and future developments: [/docs/future.md](/docs/future.md)
 
+## Few videos of the pendant in action
 
 https://github.com/ivomirb/Controlinator-3000/assets/85206280/82b60430-23b6-44c3-90c5-cbde8dea85b0
 
