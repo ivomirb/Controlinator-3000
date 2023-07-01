@@ -9,9 +9,9 @@ CNC handheld pendant for OpenBuilds CONTROL
 * Switch between machine and work coordinates
 * Fast XY jogging with the joystick
 * Precise jogging of a single axis with the handwheel
-* Safe jog limits for all axis
-* Start and control jobs
-* Run macros
+* Safe jog limits in all directions
+* Start and control jobs, adjust feeds and speeds on the fly
+* Run custom macros
 * Probe Z
 * Measure tool length
 * Extensive configuration settings
