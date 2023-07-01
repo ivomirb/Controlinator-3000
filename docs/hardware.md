@@ -31,17 +31,21 @@ https://www.aliexpress.us/item/3256804994691187.html
 
 **Optional reset switch:** You can mount a tiny reset switch that is accessible through a small hole in the front. The existing mount is for this type of switch: https://www.amazon.com/gp/product/B073TYWX86
 
+You can find the schematics here: https://easyeda.com/editor#id=6772a173c7f747c4bd99ec3e6c18ea2e  
+Shoutout to EasyEDA – I’ve never designed a PCB before, but after only watching a [10-minute video](https://www.youtube.com/watch?v=MsdJgEinb34) I was able to make my own circuit, edit a custom footprint for the 34-pin Arduino variant, design the dual layer board, and order it from the JLCPCB factory, all in two hours. With the available coupons, I got 15 copies essentially for free.  
+(not a sponsored statement – just happy with the service and the end product)
+
 ## Microcontrollers
 There are few choices that are supported
 
-A regular Arduino Nano with ATmega 328P. It has 32K ROM and 2K RAM. This is what I used throughout most of the development
+1. A regular Arduino Nano with ATmega 328P. It has 32K ROM and 2K RAM. This is what I used throughout most of the development
 
-Arduino Nano Every, with ATmega 4809 chip. It has 48K ROM and 6K RAM. The extra memory allows for the display to be mirrored in RAM and to be updated only as needed. This greatly improves the framerate and responsiveness.
+2. Arduino Nano Every, with ATmega 4809 chip. It has 48K ROM and 6K RAM. The extra memory allows for the display to be mirrored in RAM and to be updated only as needed. This greatly improves the framerate and responsiveness.  
 I do not own one and haven’t tested it, however I’m pretty confident it would work, since it is very similar to 4808
 
-An Arduino Every clone with ATmega 4808, like this one: https://www.aliexpress.us/item/3256804681280426.html  
-It is similar to Arduino Every, however has 4 extra pins, including a UPDI connection that allows programming it without interfering with the USB port. This is what I ended up using in the final version.
-Note: While this model has the same general pinout as Arduino Nano, there are subtle differences. The most notable is that the SCL and SDA pins needed to drive the display are on different pins – D4 and D5 instead of A4 and A5 on the Nano. The PCB can be configured to work with one or the other. See below
+3. An Arduino Every clone with ATmega 4808, like this one: https://www.aliexpress.us/item/3256804681280426.html  
+It is similar to Arduino Every, however has 4 extra pins, including a UPDI connection that allows programming it without interfering with the USB port. This is what I ended up using in the final version.  
+**Note:** While this model has the same general pinout as Arduino Nano, there are subtle differences. The most notable is that the SCL and SDA pins needed to drive the display are on different pins – D4 and D5 instead of A4 and A5 on the Nano. The PCB can be configured to work with one or the other. See below
 
 Other devices may also work if they have the right capabilities and compatible pinout. You may need to edit Config.h to be able to compile the source code.
 
