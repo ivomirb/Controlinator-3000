@@ -1,7 +1,7 @@
 # Controlinator 3000
 CNC handheld pendant for OpenBuilds CONTROL
 
-![The pendant](https://image.easyeda.com/pullimage/YH3CwkffxsZ6yjO7cIodmWChdQjGBMVUCM6S4cOt.jpeg)
+![The pendant](/assets/images/main.jpg)
 
 Main features:
 
@@ -15,3 +15,24 @@ Main features:
 * Probe Z
 * Measure tool length
 * Extensive configuration settings
+
+
+How to make it: /docs/hardware.md
+
+How to program it: /docs/sofware.md
+
+How to configure it: /docs/settings.md
+
+How to use it: /docs/usage.md
+
+Issues and future developments: /docs/future.md
+
+
+https://github.com/ivomirb/Controlinator-3000/assets/85206280/82b60430-23b6-44c3-90c5-cbde8dea85b0
+
+
+https://github.com/ivomirb/Controlinator-3000/assets/85206280/08690167-5684-4be5-bea4-8ef6c2ea5f81
+
+
+https://github.com/ivomirb/Controlinator-3000/assets/85206280/ce256c9c-9cf2-4aa7-af1b-1ccd04ead18f
+
