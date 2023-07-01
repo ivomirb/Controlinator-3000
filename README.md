@@ -29,6 +29,7 @@ How to use it: [/docs/usage.md](/docs/usage.md)
 Issues and future developments: [/docs/future.md](/docs/future.md)
 
 ## Few videos of the pendant in action
+Higher-quality versions of these videos can be viewed near the bottom of the OSHWLab page: https://oshwlab.com/ivo1/controlinator3000
 
 https://github.com/ivomirb/Controlinator-3000/assets/85206280/82b60430-23b6-44c3-90c5-cbde8dea85b0
 

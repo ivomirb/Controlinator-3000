@@ -1,7 +1,5 @@
 # Controlinator 3000 - Hardware
- 
 
-## Tl;dr
 Long story short, make the PCB, add a microcontroller, a display, some buttons, a handwheel and a joystick. Place them inside the provided 3D model. Upload the C++ code to the microcontroller and use the Javascript code as a macro for the OpenBuilds Control software.
 
 You can use Arduino Nano, Arduino Nano Every with 4809 chip, or Arduino Nano clone with 4808. The last two have extra memory, which enables better performance.  
@@ -10,8 +8,7 @@ PCB: https://easyeda.com/editor#id=7d417a9957d24bc288f2ec065d723912
 Source code: https://github.com/ivomirb/Controlinator-3000/tree/master/Source  
 3D models: https://github.com/ivomirb/Controlinator-3000/tree/master/Models
 
-## In detail
-You will need a few electronic components
+## Components
 
 **Microcontroller:** You need one compatible with Arduino Nano. There are few options with different capabilities. Both 30-pin and 34-pin packages are supported. See the next section for more details.
 
@@ -49,7 +46,7 @@ It is similar to Arduino Every, however has 4 extra pins, including a UPDI conne
 
 Other devices may also work if they have the right capabilities and compatible pinout. You may need to edit Config.h to be able to compile the source code.
 
-## Few notes on the PCB assembly
+## Assembly
 * If you have a 30-pin Arduino Nano or Nano Every, use the middle 30 pins. Ignore the 4 corner pins. For 34-pin versions use the entire footprint
 
 * You can solder the Arduino directly to the PCB or use two 17-pin female headers to make it removable. I opted for removable so I can easily experiment during development
