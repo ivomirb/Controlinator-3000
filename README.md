@@ -26,6 +26,8 @@ How to configure it: [/docs/settings.md](/docs/settings.md)
 
 How to use it: [/docs/usage.md](/docs/usage.md)
 
+Tool length probing: [/docs/tool_length.md](/docs/tool_length.md)
+
 Issues and future developments: [/docs/future.md](/docs/future.md)
 
 ## Few videos of the pendant in action

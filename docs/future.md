@@ -2,7 +2,8 @@
 
 There are a few things that can be improved in future versions. In no particular order:
 
-One issue is that the buttons are disproportionately large compared to the screen, which leads to misalignment. Possibly the use of smaller buttons or a larger screen can improve this.
+There is a known problem where jogging with the wheel might occasionally stall. This happens when Grbl enters a Run state instead of Jog state after a jog command. The next jog command fails, because jog commands are not allowed during the Run state.  
+At this time I don't know if this is a bug in Grbl or something my code is doing wrong.
 
 You can use buttons with built-in lights. This way the buttons that are inactive can be turned off, making it easier to associate a button with its label, even if they are not exactly aligned. There aren’t enough pins to control each light individually, however an 8-bit shift register like 74HC595 can be used to drive 8 LEDs with only 3 digital pins.
 
