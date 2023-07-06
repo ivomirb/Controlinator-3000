@@ -1861,7 +1861,7 @@ function ExecuteMacro(macroName)
 		{
 			if (button.codetype == "gcode")
 			{
-				sendGcode(button.gcode.replace(/(\r\n|\n|\r)/gm, "\\n"));
+				sendGcode(button.gcode);
 			}
 			else if (button.codetype == "javascript" && !button.jsrunonstartup)
 			{
