@@ -49,16 +49,7 @@ void ProbeMenuScreen::Update( unsigned long time )
 	}
 	else if ((g_TloState & TLO_HAS_REF) && button == BUTTON_PROBE_NEW_TOOL)
 	{
-		if (g_bRecentlyHomed)
-		{
-			g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_NEW_TOOL, true);
-		}
-		else
-		{
-			Serial.print(g_StrPROBE2);
-			Serial.print(g_StrENTER);
-			Serial.println(ZProbeScreen::PROBE_NEW_TOOL);
-		}
+		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_NEW_TOOL, true);
 	}
 	else if (button == BUTTON_BACK)
 	{
