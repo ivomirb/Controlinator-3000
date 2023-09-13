@@ -1091,10 +1091,22 @@ function HandleJobMenu()
 		return;
 	}
 
-	var text;
+	var OnEnterJobMenu = $('#pendant').prop('OnEnterJobMenu');
+	if (OnEnterJobMenu != undefined)
+	{
+		OnEnterJobMenu(HandleJobMenuPart2);
+	}
+	else
+	{
+		HandleJobMenuPart2();
+	}
+}
+
+function HandleJobMenuPart2()
+{
 	if (g_PendantSettings.jobChecklist && g_PendantSettings.jobChecklist.length > 0)
 	{
-		text = g_PendantSettings.jobChecklist.split('|').map(x => CHAR_UNCHECKED + " " + x.substring(0, 16)).slice(0, 3);
+		var text = g_PendantSettings.jobChecklist.split('|').map(x => CHAR_UNCHECKED + " " + x.substring(0, 16)).slice(0, 3);
 		ShowPendantDialog({
 			title: "Job Checklist",
 			text: text,
