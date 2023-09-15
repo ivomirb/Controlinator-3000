@@ -1148,7 +1148,7 @@ function HandleJobCommand(command)
 	}
 	else if (command == "STOP")
 	{
-		socket.emit('stop', { stop: true, jog: false, abort: false});
+		SafeStop(true);
 	}
 }
 
