@@ -17,15 +17,17 @@ void ZProbeScreen::Draw( void )
 	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->unusedButtons == unusedButtons;
 	const bool bDrawUp = bDrawAll || pDrawState->bJoggingUp != m_bJoggingUp;
 	const bool bDrawDown = bDrawAll || pDrawState->bJoggingDown != m_bJoggingDown;
+	const bool bDrawContact = bDrawAll || pDrawState->bContact != m_bProbeContact;
 	pDrawState->unusedButtons = unusedButtons;
 	pDrawState->bJoggingUp = m_bJoggingUp;
 	pDrawState->bJoggingDown = m_bJoggingDown;
+	pDrawState->bContact = m_bProbeContact;
 	if (bDrawAll && !s_DrawState.bDrawAll)
 	{
 		ClearBuffer();
 	}
 #else
-	const bool bDrawButton = true, bDrawUp = true, bDrawDown = true, bDrawAll = true;
+	const bool bDrawButton = true, bDrawUp = true, bDrawDown = true, bDrawContact = true, bDrawAll = true;
 #endif
 
 	if (bDrawAll)
@@ -92,6 +94,25 @@ void ZProbeScreen::Draw( void )
 #endif
 		DrawText(0, 3, ROMSTR("Z Down"));
 		SetDrawColor(1);
+	}
+
+	if (bDrawContact)
+	{
+		if (m_bProbeContact)
+		{
+			DrawBox(8, g_Rows[4] - 1, 7*7 + 1, 10);
+			SetDrawColor(0);
+			DrawTextXY(9, g_Rows[4], ROMSTR("CONTACT"));
+			SetDrawColor(1);
+		}
+#if PARTIAL_SCREEN_UPDATE
+		else
+		{
+			SetDrawColor(0);
+			DrawBox(8, g_Rows[4] - 1, 7*7 + 1, 10);
+			SetDrawColor(1);
+		}
+#endif
 	}
 }
 

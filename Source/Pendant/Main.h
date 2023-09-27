@@ -1,4 +1,4 @@
-#define PENDANT_VERSION "1.0" // must match Pendant.js
+#define PENDANT_VERSION "1.1" // must match Pendant.js
 #define PENDANT_BAUD_RATE 38400 // must match Pendant.js
 
 #include "Config.h"
@@ -37,6 +37,7 @@ bool g_bWorkSpace = true;
 bool g_bShowInches = true;
 bool g_bJobRunning = false;
 bool g_bRecentlyHomed = false;
+bool m_bProbeContact = true;
 int8_t g_JobProgress = -1;
 
 enum
@@ -178,6 +179,8 @@ void ParseStatus2( const char *status )
 	if (g_bJobRunning) status++;
 	g_bRecentlyHomed = status[0] == 'H';
 	if (g_bRecentlyHomed) status++;
+	m_bProbeContact = status[0] == 'P';
+	if (m_bProbeContact) status++;
 	g_TloState = status[0] - '0';
 	status++;
 	g_OffsetX = atof(status); status = strchr(status, ',') + 1;

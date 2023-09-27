@@ -452,6 +452,7 @@ public:
 		uint8_t unusedButtons;
 		uint8_t bJoggingUp : 1;
 		uint8_t bJoggingDown : 1;
+		uint8_t bContact : 1;
 	};
 
 	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
