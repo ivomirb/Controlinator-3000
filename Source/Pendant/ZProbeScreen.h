@@ -6,6 +6,10 @@ void ZProbeScreen::Draw( void )
 	if (g_MachineStatus == STATUS_IDLE && m_bConfirmed)
 	{
 		unusedButtons &= ~(1 << BUTTON_PROBE);
+		if (m_ProbeMode == PROBE_Z && (g_ProbeState & PROBE_MEASURE_ENABLED))
+		{
+			unusedButtons &= ~(1 << BUTTON_MEASURE);
+		}
 	}
 	if (g_bCanShowStop)
 	{
@@ -46,6 +50,10 @@ void ZProbeScreen::Draw( void )
 		if (g_MachineStatus == STATUS_IDLE && m_bConfirmed)
 		{
 			DrawButton(BUTTON_PROBE, ROMSTR("Probe"), 5, true);
+			if (m_ProbeMode == PROBE_Z && (g_ProbeState & PROBE_MEASURE_ENABLED))
+			{
+				DrawButton(BUTTON_MEASURE, ROMSTR("Measure"), 7, true);
+			}
 		}
 
 		SetDrawColor(1);
@@ -159,7 +167,7 @@ void ZProbeScreen::Update( unsigned long time )
 
 	if (m_ProbeMode != PROBE_Z)
 	{
-		m_bConfirmed = (g_TloState & TLO_IN_POSITION) != 0;
+		m_bConfirmed = (g_ProbeState & PROBE_TLO_IN_POSITION) != 0;
 	}
 
 	if (button == BUTTON_CONNECT)
@@ -180,7 +188,7 @@ void ZProbeScreen::Update( unsigned long time )
 	{
 		Serial.print(g_StrPROBE2);
 		Serial.println(g_StrCANCEL);
-		if (g_TloState & TLO_ENABLED)
+		if (g_ProbeState & PROBE_TLO_ENABLED)
 		{
 			g_ProbeMenuScreen.Activate(time);
 		}
@@ -188,6 +196,13 @@ void ZProbeScreen::Update( unsigned long time )
 		{
 			CloseScreen();
 		}
+	}
+	else if (m_bConfirmed && g_MachineStatus == STATUS_IDLE && m_ProbeMode == PROBE_Z && (g_ProbeState & PROBE_MEASURE_ENABLED) && TestBit(g_ButtonHold, BUTTON_MEASURE))
+	{
+		Serial.print(g_StrPROBE2);
+		Serial.print(g_StrSTART);
+		Serial.println(PROBE_MEASURE_Z);
+		CloseScreen();
 	}
 	else if (m_bConfirmed && g_MachineStatus == STATUS_IDLE && TestBit(g_ButtonHold, BUTTON_PROBE))
 	{

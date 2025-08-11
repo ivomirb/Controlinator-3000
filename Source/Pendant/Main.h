@@ -1,4 +1,4 @@
-#define PENDANT_VERSION "1.1" // must match Pendant.js
+#define PENDANT_VERSION "1.2" // must match Pendant.js
 #define PENDANT_BAUD_RATE 38400 // must match Pendant.js
 
 #include "Config.h"
@@ -42,12 +42,13 @@ int8_t g_JobProgress = -1;
 
 enum
 {
-	TLO_ENABLED = 1,
-	TLO_HAS_REF = 2,
-	TLO_IN_POSITION = 4,
+	PROBE_MEASURE_ENABLED = 1,
+	PROBE_TLO_ENABLED = 2,
+	PROBE_TLO_HAS_REF = 4,
+	PROBE_TLO_IN_POSITION = 8,
 };
 
-uint8_t g_TloState = 0;
+uint8_t g_ProbeState = 0;
 
 // feed and speed
 uint16_t g_FeedOverride;
@@ -181,7 +182,8 @@ void ParseStatus2( const char *status )
 	if (g_bRecentlyHomed) status++;
 	m_bProbeContact = status[0] == 'P';
 	if (m_bProbeContact) status++;
-	g_TloState = status[0] - '0';
+	g_ProbeState = status[0];
+	g_ProbeState = g_ProbeState <= '9' ? g_ProbeState - '0' : g_ProbeState - 55;
 	status++;
 	g_OffsetX = atof(status); status = strchr(status, ',') + 1;
 	g_OffsetY = atof(status); status = strchr(status, ',') + 1;
@@ -472,6 +474,6 @@ void loop( void )
 		Serial.print(g_Dtt/30);
 		Serial.print(" MAX: ");
 		Serial.println(g_DtMax);*/
-		g_Frame=g_Dtt=g_DtMax=0;
+		g_Frame = g_Dtt = g_DtMax = 0;
 	}
 }

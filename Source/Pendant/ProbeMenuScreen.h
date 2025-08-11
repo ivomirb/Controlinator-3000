@@ -2,8 +2,8 @@ void ProbeMenuScreen::Draw( void )
 {
 #if PARTIAL_SCREEN_UPDATE
 	DrawState *pDrawState = reinterpret_cast<DrawState*>(s_DrawState.custom);
-	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->tloState != g_TloState;
-	pDrawState->tloState = g_TloState;
+	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->probeState != g_ProbeState;
+	pDrawState->probeState = g_ProbeState;
 	if (!bDrawAll) return;
 	if (!s_DrawState.bDrawAll)
 	{
@@ -15,7 +15,7 @@ void ProbeMenuScreen::Draw( void )
 	uint8_t unusedButtons = 0x78;
 	DrawButton(BUTTON_PROBE_Z, ROMSTR("Probe Z"), 7, false);
 	DrawButton(BUTTON_PROBE_REF_TOOL, ROMSTR("Probe Ref Tool"), 14, false);
-	if (g_TloState & TLO_HAS_REF)
+	if (g_ProbeState & PROBE_TLO_HAS_REF)
 	{
 		DrawButton(BUTTON_PROBE_NEW_TOOL, ROMSTR("Probe New Tool"), 14, false);
 	}
@@ -47,7 +47,7 @@ void ProbeMenuScreen::Update( unsigned long time )
 			Serial.println(ZProbeScreen::PROBE_REF_TOOL);
 		}
 	}
-	else if ((g_TloState & TLO_HAS_REF) && button == BUTTON_PROBE_NEW_TOOL)
+	else if ((g_ProbeState & PROBE_TLO_HAS_REF) && button == BUTTON_PROBE_NEW_TOOL)
 	{
 		g_ZProbeScreen.Activate(time, ZProbeScreen::PROBE_NEW_TOOL, true);
 	}
