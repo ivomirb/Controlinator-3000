@@ -385,6 +385,10 @@ function HandleJobComplete(data)
 // Responds to a handshake command
 function HandleHandshake()
 {
+	g_PendantPort.flush();
+	g_SerialQueue = [];
+	g_bSerialPending = false;
+	WritePort("");
 	ClearStatusCache();
 	PushSettings(false);
 	PushStatus(laststatus);

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <EEPROM.h>
+#include <avr/wdt.h>
 
 #ifdef U8X8_HAVE_HW_I2C
 #include <Wire.h>
