@@ -30,6 +30,17 @@ Tool length probing: [/docs/tool_length.md](/docs/tool_length.md)
 
 Issues and future developments: [/docs/future.md](/docs/future.md)
 
+## Versions
+
+### 1.1 - July 2023
+* Initial public version
+
+
+### 1.2 - August 2025
+* New option to use the probe to measure Z height without changing the work coordinate system
+* A watchdog system to detect lockups and automatically restart and reconnect
+* Few bug fixes
+
 ## Few videos of the pendant in action
 Higher-quality versions of these videos can be viewed near the bottom of the OSHWLab page: https://oshwlab.com/ivo1/controlinator3000
 
