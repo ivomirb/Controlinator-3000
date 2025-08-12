@@ -113,7 +113,7 @@ void MainScreen::Update( unsigned long time )
 		}
 		else if (button == BUTTON_PROBE)
 		{
-			if (g_TloState & TLO_ENABLED)
+			if (g_ProbeState & PROBE_TLO_ENABLED)
 			{
 				g_ProbeMenuScreen.Activate(time);
 			}

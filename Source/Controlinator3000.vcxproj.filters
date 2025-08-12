@@ -110,6 +110,9 @@
     <ClInclude Include="Pendant\Config.h">
       <Filter>Pendant</Filter>
     </ClInclude>
+    <ClInclude Include="Pendant\Watchdog.h">
+      <Filter>Pendant</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="Pendant\font.bmp">

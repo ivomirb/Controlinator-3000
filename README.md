@@ -20,7 +20,7 @@ CNC handheld pendant for OpenBuilds CONTROL
 
 How to make it: [/docs/hardware.md](/docs/hardware.md)
 
-How to program it: [/docs/sofware.md](/docs/sofware.md)
+How to program it: [/docs/software.md](/docs/software.md)
 
 How to configure it: [/docs/settings.md](/docs/settings.md)
 

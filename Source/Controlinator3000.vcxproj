@@ -110,6 +110,7 @@
     <ClInclude Include="Pendant\RomSettings.h" />
     <ClInclude Include="Pendant\RunScreen.h" />
     <ClInclude Include="Pendant\SpecialStrings.h" />
+    <ClInclude Include="Pendant\Watchdog.h" />
     <ClInclude Include="Pendant\WelcomeScreen.h" />
     <ClInclude Include="Pendant\ZProbeScreen.h" />
     <ClInclude Include="Pendant\_BaseScreen.h" />

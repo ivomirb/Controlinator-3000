@@ -1,4 +1,4 @@
-#define PENDANT_VERSION "1.1" // must match Pendant.js
+#define PENDANT_VERSION "1.2" // must match Pendant.js
 #define PENDANT_BAUD_RATE 38400 // must match Pendant.js
 
 #include "Config.h"
@@ -23,6 +23,12 @@ const unsigned long SHOW_STOP_TIME = 500; // after 500ms after the last idle, al
 // State
 
 bool g_bConnected;
+#if USE_WATCHDOG
+bool g_bWDTCrash;
+#else
+const bool g_bWDTCrash = false;
+#endif
+
 unsigned long g_CurrentTime;
 unsigned long g_LastPingTime;
 unsigned long g_LastPongTime;
@@ -42,12 +48,13 @@ int8_t g_JobProgress = -1;
 
 enum
 {
-	TLO_ENABLED = 1,
-	TLO_HAS_REF = 2,
-	TLO_IN_POSITION = 4,
+	PROBE_MEASURE_ENABLED = 1,
+	PROBE_TLO_ENABLED = 2,
+	PROBE_TLO_HAS_REF = 4,
+	PROBE_TLO_IN_POSITION = 8,
 };
 
-uint8_t g_TloState = 0;
+uint8_t g_ProbeState = 0;
 
 // feed and speed
 uint16_t g_FeedOverride;
@@ -110,6 +117,10 @@ void BaseScreen::CloseScreen( void )
 #include "RunScreen.h"
 #include "WelcomeScreen.h"
 #include "ZProbeScreen.h"
+
+#if USE_WATCHDOG
+#include "Watchdog.h"
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -181,7 +192,8 @@ void ParseStatus2( const char *status )
 	if (g_bRecentlyHomed) status++;
 	m_bProbeContact = status[0] == 'P';
 	if (m_bProbeContact) status++;
-	g_TloState = status[0] - '0';
+	g_ProbeState = status[0];
+	g_ProbeState = g_ProbeState <= '9' ? g_ProbeState - '0' : g_ProbeState - 55;
 	status++;
 	g_OffsetX = atof(status); status = strchr(status, ',') + 1;
 	g_OffsetY = atof(status); status = strchr(status, ',') + 1;
@@ -288,8 +300,11 @@ void ProcessCommand( const char *command, unsigned long time )
 
 	if (strncmp(command, "DIALOG:", 7) == 0)
 	{
-		g_DialogScreen.Activate(time);
-		g_DialogScreen.ParseDialog(command + 7);
+		if (!g_bWDTCrash)
+		{
+			g_DialogScreen.Activate(time);
+			g_DialogScreen.ParseDialog(command + 7);
+		}
 		return;
 	}
 
@@ -324,8 +339,23 @@ void setup( void )
 	InitializeGraphics();
 	InitializeEncoder();
 	g_CurrentTime = millis();
+#if USE_WATCHDOG
+	if (InitializeWatchdog())
+	{
+		g_bWDTCrash = true;
+		HandleHandshake();
+		char dialogText[60];
+		strcpy_P(dialogText, PSTR("10001|CRASH DETECTED|Watchdog detected|a crash.||,DISMISS"));
+		g_DialogScreen.Activate(g_CurrentTime);
+		g_DialogScreen.ParseDialog(dialogText);
+	}
+#endif
+
 #ifndef DISABLE_WELCOME_SCREEN
-	g_WelcomeScreen.Activate(g_CurrentTime);
+	if (!g_bWDTCrash)
+	{
+		g_WelcomeScreen.Activate(g_CurrentTime);
+	}
 #endif
 }
 
@@ -378,7 +408,20 @@ void loop( void )
 
 	// select a screen based on the global status
 	bool bScreenSelected = true;
-	if (!g_bConnected || g_MachineStatus == STATUS_DISCONNECTED)
+	if (g_bWDTCrash)
+	{
+		if (!g_DialogScreen.IsActive())
+		{
+#if USE_WATCHDOG
+			g_bWDTCrash = false;
+#endif
+			if (g_MainScreen.IsActive() && g_bJobRunning)
+			{
+				g_RunScreen.Activate(time);
+			}
+		}
+	}
+	else if (!g_bConnected || g_MachineStatus == STATUS_DISCONNECTED)
 	{
 #ifndef DISABLE_CALIBRATION_SCREEN
 		if (g_CalibrationScreen.IsActive())
@@ -472,6 +515,10 @@ void loop( void )
 		Serial.print(g_Dtt/30);
 		Serial.print(" MAX: ");
 		Serial.println(g_DtMax);*/
-		g_Frame=g_Dtt=g_DtMax=0;
+		g_Frame = g_Dtt = g_DtMax = 0;
 	}
+
+#if USE_WATCHDOG
+	TickWatchdog();
+#endif
 }

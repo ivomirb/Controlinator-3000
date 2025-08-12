@@ -26,7 +26,7 @@ const WHEEL_JOG_AHEAD_TIME = 600; // up to 600ms of jog time submitted to Grbl
 const WHEEL_JOG_STOP_TIME = 100; // the jog will stop 100ms after the last click
 
 // These must match Main.h
-const PENDANT_VERSION = "1.1";
+const PENDANT_VERSION = "1.2";
 const PENDANT_BAUD_RATE = 38400;
 
 // Must match Input.h
@@ -187,6 +187,10 @@ function GenerateStatusString(s)
 			status = g_StatusMap.Jog;
 		}
 	}
+	if (status == undefined)
+	{
+		status = 0;
+	}
 
 	var str = "STATUS:" + status + "|"
 		+ s.machine.position.work.x.toFixed(3) + ","
@@ -206,15 +210,19 @@ function GenerateStatusString(s)
 // Generates a string for the secondary status (values that change less often)
 function GenerateStatus2String(s)
 {
-	var tlo = 0;
+	var tlo = g_PendantSettings.zProbe.style == "default" ? 0 : 1;
 	if (g_PendantSettings.toolProbe.style != "disable")
 	{
-		tlo = g_TloRefZ == undefined ? 1 : 3;
+		tlo += g_TloRefZ == undefined ? 2 : 6;
 		if (Math.abs(s.machine.position.work.x + s.machine.position.offset.x - g_PendantSettings.toolProbe.location.X) <= 1 &&
 				Math.abs(s.machine.position.work.y + s.machine.position.offset.y - g_PendantSettings.toolProbe.location.Y) <= 1)
 		{
-			tlo += 4;
+			tlo += 8;
 		}
+	}
+	if (tlo > 9)
+	{
+		tlo = String.fromCharCode(55 + tlo);
 	}
 
 	// secondary status string - STATUS2:[J][H][P]<tlo>offsetX,offsetY,offsetZ
@@ -377,6 +385,10 @@ function HandleJobComplete(data)
 // Responds to a handshake command
 function HandleHandshake()
 {
+	g_PendantPort.flush();
+	g_SerialQueue = [];
+	g_bSerialPending = false;
+	WritePort("");
 	ClearStatusCache();
 	PushSettings(false);
 	PushStatus(laststatus);
@@ -802,7 +814,7 @@ function UpdateJogXY()
 		var dt = (t - g_JogXYTime) / 1000;
 		g_JogXYTime = t;
 
-		if (!QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, dt))
+		if (dt > 0 && !QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, dt))
 		{
 			g_JogXYState = undefined;
 		}
@@ -1155,9 +1167,9 @@ function HandleJobCommand(command)
 function SetupProbeMode(probeType)
 {
 	// validate probe settings
-	var settings  = probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe;
+	var settings  = (probeType == 0 || probeType == 3) ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe;
 	var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
-	if ((probeType != 0 || zProbeThickness >= 0) &&
+	if (((probeType != 0 && probeType != 3) || zProbeThickness >= 0) &&
 		settings.seek1.travel > 0 && settings.seek1.feed &&
 		settings.retract1.travel > 0 && settings.retract1.feed)
 	{
@@ -1211,6 +1223,12 @@ function HandleProbeJobComplete(probeType, probeZ)
 			window.LastWcs.Z += delta;
 		}
 	}
+	else if (probeType == 3)
+	{
+		var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
+		probeZ = (probeZ - zProbeThickness - laststatus.machine.position.offset.z).toFixed(3);
+		showZ = true;
+	}
 
 	var text = [];
 	if (showZ)
@@ -1220,7 +1238,7 @@ function HandleProbeJobComplete(probeType, probeZ)
 	text.push("Disconnect probe");
 
 	ShowPendantDialog({
-		title: "Probe Complete",
+		title: probeType == 3 ? "Measure Complete" : "Probe Complete",
 		text: text,
 		rButton: ["OK", function()
 		{
@@ -1383,7 +1401,7 @@ function HandleProbeCommand(command)
 		else if (laststatus.comms.runStatus == "Idle")
 		{
 			// initiate seek 1
-			var settings = probeType == 0 ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe;
+			var settings = (probeType == 0 || probeType == 3) ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe;
 			var feed = Math.max(Math.min(settings.seek1.feed, grblParams["$112"]), 10);
 			var gcode = "G38.3 G21 G91 Z-" + settings.seek1.travel.toFixed(3) + " F" + feed.toFixed(0);
 			g_LastProbeZ = undefined;

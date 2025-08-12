@@ -306,13 +306,14 @@ private:
 		BUTTON_PROBE_Z = 0,
 		BUTTON_PROBE_REF_TOOL = 1,
 		BUTTON_PROBE_NEW_TOOL = 2,
+		BUTTON_MEASURE_Z = 3,
 		BUTTON_BACK = 7,
 	};
 
 #if PARTIAL_SCREEN_UPDATE
 	struct DrawState
 	{
-		uint8_t tloState;
+		uint8_t probeState;
 	};
 
 	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
@@ -423,6 +424,7 @@ public:
 		PROBE_Z,
 		PROBE_REF_TOOL,
 		PROBE_NEW_TOOL,
+		PROBE_MEASURE_Z,
 	};
 
 	void Activate( unsigned long time, ProbeMode mode, bool bNotify );
@@ -432,6 +434,7 @@ public:
 		BUTTON_CONNECT = 0,
 		BUTTON_UP = 1,
 		BUTTON_DOWN = 2,
+		BUTTON_MEASURE = 5,
 		BUTTON_PROBE = 6,
 		BUTTON_STOP = 5,
 		BUTTON_BACK = 7,

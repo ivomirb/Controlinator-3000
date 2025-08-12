@@ -9,6 +9,9 @@ struct RomSettings
 	uint16_t signature; // must match SETTINGS_SIGNATURE
 	uint16_t calibration[8];
 	char pendantName[19];
+#if USE_WATCHDOG
+	uint8_t bCrash;
+#endif
 };
 
 const int SETTINGS_ROM_ADDRESS = 0;
@@ -32,6 +35,9 @@ void ReadRomSettings( void )
 		g_RomSettings.calibration[5] = 512-64;
 		g_RomSettings.calibration[6] = 512+64;
 		g_RomSettings.calibration[7] = 1023;
+#if USE_WATCHDOG
+		g_RomSettings.bCrash = 0;
+#endif
 		EEPROM.put(SETTINGS_ROM_ADDRESS, g_RomSettings);
 	}
 }

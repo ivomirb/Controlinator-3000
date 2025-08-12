@@ -68,6 +68,10 @@ void DialogScreen::Update( unsigned long time )
 		pState->m_Lines[button + 1][0] = CHAR_CHECKED; // switch checkbox to checked
 		pState->m_CheckFlags &= ~(1 << button);
 	}
+	else if (button >= 0 && button <= 3 && pState->m_CheckFlags)
+	{
+		return;
+	}
 	if (pState->m_Buttons[0][0] == '@' && pState->m_CheckFlags == 0 && g_ButtonState == 0)
 	{
 		SendResponse(1);
