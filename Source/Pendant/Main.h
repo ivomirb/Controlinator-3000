@@ -1,4 +1,4 @@
-#define PENDANT_VERSION "1.2" // must match Pendant.js
+#define PENDANT_VERSION "1.3" // must match Pendant.js
 #define PENDANT_BAUD_RATE 38400 // must match Pendant.js
 
 #include "Config.h"
@@ -23,6 +23,7 @@ const unsigned long SHOW_STOP_TIME = 500; // after 500ms after the last idle, al
 // State
 
 bool g_bConnected;
+bool g_bTimedOut;
 #if USE_WATCHDOG
 bool g_bWDTCrash;
 #else
@@ -43,7 +44,7 @@ bool g_bWorkSpace = true;
 bool g_bShowInches = true;
 bool g_bJobRunning = false;
 bool g_bRecentlyHomed = false;
-bool m_bProbeContact = true;
+bool g_bProbeContact = true;
 int8_t g_JobProgress = -1;
 
 enum
@@ -190,8 +191,8 @@ void ParseStatus2( const char *status )
 	if (g_bJobRunning) status++;
 	g_bRecentlyHomed = status[0] == 'H';
 	if (g_bRecentlyHomed) status++;
-	m_bProbeContact = status[0] == 'P';
-	if (m_bProbeContact) status++;
+	g_bProbeContact = status[0] == 'P';
+	if (g_bProbeContact) status++;
 	g_ProbeState = status[0];
 	g_ProbeState = g_ProbeState <= '9' ? g_ProbeState - '0' : g_ProbeState - 55;
 	status++;
@@ -237,7 +238,8 @@ void ProcessCommand( const char *command, unsigned long time )
 	}
 	if (strcmp(command, "BYE") == 0)
 	{
-		g_bConnected =false;
+		g_bConnected = false;
+		g_bTimedOut = false;
 		g_MachineStatus = STATUS_DISCONNECTED;
 		return;
 	}
@@ -253,6 +255,7 @@ void ProcessCommand( const char *command, unsigned long time )
 	if (strncmp(command, "STATUS:", 7) == 0)
 	{
 		g_bConnected = true;
+		g_bTimedOut = false;
 		ParseStatus(command + 7);
 		return;
 	}
@@ -363,6 +366,26 @@ int g_Frame = 0;
 uint16_t g_Dtt = 0;
 uint16_t g_DtMax = 0;
 
+#if PARTIAL_SCREEN_UPDATE
+bool g_bJoystickDown = false;
+#endif
+
+// Draws a pixel in the corner if the joystick button is clicked. This is used to quickly test if the pendant is responsive
+void UpdateJoystickPixel( void )
+{
+	bool bJoystickDown = TestBit(g_ButtonState, BUTTON_JOYSTICK);
+#if PARTIAL_SCREEN_UPDATE
+	if (g_bJoystickDown != bJoystickDown || BaseScreen::IsDrawAll() || IsDirtyPixel(127, 0))
+	{
+		g_bJoystickDown = bJoystickDown;
+#else
+	{
+#endif
+		SetDrawColor(bJoystickDown ? 1 : 0);
+		DrawBox(127, 0, 1, 1);
+	}
+}
+
 void loop( void )
 {
 	unsigned long time = millis();
@@ -382,6 +405,7 @@ void loop( void )
 			if (g_LastPongTime < g_LastPingTime)
 			{
 				g_bConnected = false;
+				g_bTimedOut = true;
 			}
 			else
 			{
@@ -493,6 +517,7 @@ void loop( void )
 	BaseScreen::ClearScreen();
 	SetDrawColor(1);
 	BaseScreen::s_pCurrentScreen->Draw();
+	UpdateJoystickPixel();
 #if PARTIAL_SCREEN_UPDATE
 	BaseScreen::UpdateScreen();
 #else
@@ -504,6 +529,7 @@ void loop( void )
 	{
 		SetDrawColor(1);
 		BaseScreen::s_pCurrentScreen->Draw();
+		UpdateJoystickPixel();
 	}
 	while (u8g2_NextPage(&u8g2));
 #endif

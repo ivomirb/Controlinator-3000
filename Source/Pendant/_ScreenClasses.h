@@ -330,9 +330,6 @@ public:
 	virtual void Update( unsigned long time ) override;
 	virtual void Activate( unsigned long time ) override;
 
-	// Called when the status is Run but the screen is not active
-	void RunDetected( void );
-
 private:
 	enum
 	{
@@ -361,6 +358,7 @@ private:
 	{
 		JOB_NOT_STARTED,
 		JOB_STARTED,
+		JOB_RUNNING,
 		JOB_STOPPED,
 	};
 
@@ -403,6 +401,7 @@ public:
 	{
 		char name[19];
 		bool bConnected;
+		bool bTimedOut;
 	};
 
 	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");

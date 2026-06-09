@@ -71,6 +71,10 @@ void InvalidateRect( void )
 	g_DirtyRect[3] = 64;
 }
 
+bool IsDirtyPixel( int16_t x, int16_t y )
+{
+	return x >= g_DirtyRect[0] && x < g_DirtyRect[2] && y >= g_DirtyRect[1] && y < g_DirtyRect[3];
+}
 #endif
 
 #if U8G2_FULL_BUFFER

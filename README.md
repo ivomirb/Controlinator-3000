@@ -32,14 +32,18 @@ Issues and future developments: [/docs/future.md](/docs/future.md)
 
 ## Versions
 
-### 1.1 - July 2023
-* Initial public version
-
+### 1.3 - April 2026
+* Few bug fixes
+* Job actions (run, pause, stop) are logged to the console
+* Improved diagnostics for disconnects and freezes
 
 ### 1.2 - August 2025
 * New option to use the probe to measure Z height without changing the work coordinate system
 * A watchdog system to detect lockups and automatically restart and reconnect
 * Few bug fixes
+
+### 1.1 - July 2023
+* Initial public version
 
 ## Few videos of the pendant in action
 Higher-quality versions of these videos can be viewed near the bottom of the OSHWLab page: https://oshwlab.com/ivo1/controlinator3000

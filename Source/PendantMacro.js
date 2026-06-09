@@ -26,7 +26,7 @@ const WHEEL_JOG_AHEAD_TIME = 600; // up to 600ms of jog time submitted to Grbl
 const WHEEL_JOG_STOP_TIME = 100; // the jog will stop 100ms after the last click
 
 // These must match Main.h
-const PENDANT_VERSION = "1.2";
+const PENDANT_VERSION = "1.3";
 const PENDANT_BAUD_RATE = 38400;
 
 // Must match Input.h
@@ -185,6 +185,10 @@ function GenerateStatusString(s)
 		if (status == g_StatusMap.Running && (g_JogXYLocation != undefined || g_JogWQueue != undefined || g_ProbeJog != undefined))
 		{
 			status = g_StatusMap.Jog;
+		}
+		else if (status == g_StatusMap.Idle && s.comms.connectionStatus == 3)
+		{
+			status = g_StatusMap.Run; // HACK: Grbl goes "Idle" during a G4 command, which is wrong. Double-check the connectionStatus
 		}
 	}
 	if (status == undefined)
@@ -521,8 +525,16 @@ function SafeStop(force)
 {
 	if (force || !IsStableIdle())
 	{
-		socket.emit('serialInject', '!'); // feed hold
-		g_SafeStopPending = (force || laststatus.comms.runStatus == "Idle") ? 2 : 1;
+		if (laststatus.comms.runStatus == "Hold:0" || laststatus.comms.runStatus == "Door:0")
+		{
+			socket.emit('stop', {stop: true, jog: false, abort: false});
+			g_SafeStopPending = 0;
+		}
+		else
+		{
+			socket.emit('serialInject', '!'); // feed hold
+			g_SafeStopPending = (force || laststatus.comms.runStatus == "Idle") ? 2 : 1;
+		}
 	}
 }
 
@@ -1139,7 +1151,8 @@ function HandleJobCommand(command)
 	{
 		if (!$('#runBtn').attr('disabled'))
 		{
-			runJobFile()
+			runJobFile();
+			printLog("Pendant: Run job");
 		}
 	}
 	else if (command == "PAUSE")
@@ -1149,18 +1162,22 @@ function HandleJobCommand(command)
 		{
 			socket.emit('serialInject', String.fromCharCode(0x84));
 		}
+		printLog("Pendant: Pause job");
 	}
 	else if (command == "RPM0")
 	{
 		socket.emit('serialInject', String.fromCharCode(0x84));
+		printLog("Pendant: Stop spindle");
 	}
 	else if (command == "RESUME")
 	{
 		socket.emit('resume');
+		printLog("Pendant: Resume job");
 	}
 	else if (command == "STOP")
 	{
 		SafeStop(true);
+		printLog("Pendant: Stop job");
 	}
 }
 
@@ -1200,7 +1217,7 @@ function HandleProbeJobComplete(probeType, probeZ)
 	{
 		// z-probe
 		var zProbeThickness = g_PendantSettings.zProbe.thickness != undefined ? g_PendantSettings.zProbe.thickness : localStorage.getItem('z0platethickness');
-		var gcode = "G10 P0 L2 Z" + (probeZ - zProbeThickness).toFixed(3);
+		var gcode = "G10 G21 P0 L2 Z" + (probeZ - zProbeThickness).toFixed(3);
 		sendGcode(gcode);
 		showZ = true;
 	}
@@ -1215,7 +1232,7 @@ function HandleProbeJobComplete(probeType, probeZ)
 		// new tool - adjust work Z
 		var delta = probeZ - g_TloRefZ;
 		g_TloRefZ = probeZ;
-		var gcode = "G10 P0 L2 Z" + (laststatus.machine.position.offset.z + delta).toFixed(3);
+		var gcode = "G10 G21 P0 L2 Z" + (laststatus.machine.position.offset.z + delta).toFixed(3);
 		sendGcode(gcode);
 		showZ = true;
 		if (window.LastWcs != undefined && typeof(window.LastWcs.Z) == "number")
@@ -1960,10 +1977,21 @@ function TryComHandler(data)
 
 			g_CurrentTryParser.off('data', TryComHandler);
 			g_CurrentTryParser.on('data', PendantComHandler);
-			g_PendantPort.on('close', DisconnectPendant);
+			g_PendantPort.on('close', function()
+			{
+				printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Port disconnected</span>")
+				DisconnectPendant();
+			});
+			g_PendantPort.on('error', function(err)
+			{
+				if (err.message != "Port is not open")
+				{
+					printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-red'>Port error: " + err.message + "</span>")
+				}
+			});
 			socket.on('status', HandleStatus);
 			socket.on('queueCount', HandleQueueStatus);
-			socket._callbacks["$jobComplete"].splice(0,0, HandleJobComplete);
+			socket._callbacks["$jobComplete"].splice(0,0, HandleJobComplete); // hack to inject our callback first to stop OpenBuilds from showing the job completed popup
 			socket.on('ok', HandleOk);
 
 			g_CurrentTryPort = undefined;
@@ -2065,7 +2093,7 @@ window.ConnectPendant = function()
 	}
 }
 
-// Disconnects the pendant and cloes the port
+// Disconnects the pendant and closes the port
 window.DisconnectPendant = function()
 {
 	if (g_PendantPort)
@@ -2812,7 +2840,7 @@ function GetDefaultSafeLimits(axis)
 		case "Z": param = grblParams["$132"]; break;
 	}
 
-	if (laststatus.connectionStatus != 0 && param != undefined)
+	if (laststatus.comms.connectionStatus != 0 && param != undefined)
 	{
 		return {min: 3 - param, max: -3};
 	}
@@ -2832,7 +2860,7 @@ function GetSafeLimits(axis)
 
 window.ResetSafeLimits = function()
 {
-	if (laststatus.connectionStatus != 0)
+	if (laststatus.comms.connectionStatus != 0)
 	{
 		var limits = GetDefaultSafeLimits('X');
 		$('#PendantMinX').val(limits.min);

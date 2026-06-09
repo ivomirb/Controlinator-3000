@@ -242,6 +242,10 @@ void RunScreen::Update( unsigned long time )
 					Serial.println(g_StrSTOP);
 					return;
 				}
+				if (m_JobState == JOB_STARTED)
+				{
+					m_JobState = JOB_RUNNING;
+				}
 			}
 			break;
 		case STATE_PAUSED: // job is paused, but not clear to resume
@@ -300,7 +304,7 @@ void RunScreen::Update( unsigned long time )
 						return;
 					}
 				}
-				else if (m_JobState == JOB_STOPPED)
+				else if (m_JobState == JOB_STOPPED || m_JobState == JOB_RUNNING)
 				{
 					CloseScreen();
 					return;
@@ -323,10 +327,4 @@ void RunScreen::Activate( unsigned long time )
 	m_OverrideTimer = 0;
 	m_JobState = JOB_NOT_STARTED;
 	EncoderDrainValue();
-}
-
-void RunScreen::RunDetected( void )
-{
-	Assert(IsActive());
-	m_JobState = JOB_STARTED;
 }

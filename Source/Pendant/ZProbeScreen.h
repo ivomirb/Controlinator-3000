@@ -21,11 +21,11 @@ void ZProbeScreen::Draw( void )
 	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->unusedButtons == unusedButtons;
 	const bool bDrawUp = bDrawAll || pDrawState->bJoggingUp != m_bJoggingUp;
 	const bool bDrawDown = bDrawAll || pDrawState->bJoggingDown != m_bJoggingDown;
-	const bool bDrawContact = bDrawAll || pDrawState->bContact != m_bProbeContact;
+	const bool bDrawContact = bDrawAll || pDrawState->bContact != g_bProbeContact;
 	pDrawState->unusedButtons = unusedButtons;
 	pDrawState->bJoggingUp = m_bJoggingUp;
 	pDrawState->bJoggingDown = m_bJoggingDown;
-	pDrawState->bContact = m_bProbeContact;
+	pDrawState->bContact = g_bProbeContact;
 	if (bDrawAll && !s_DrawState.bDrawAll)
 	{
 		ClearBuffer();
@@ -106,7 +106,7 @@ void ZProbeScreen::Draw( void )
 
 	if (bDrawContact)
 	{
-		if (m_bProbeContact)
+		if (g_bProbeContact)
 		{
 			DrawBox(8, g_Rows[4] - 1, 7*7 + 1, 10);
 			SetDrawColor(0);

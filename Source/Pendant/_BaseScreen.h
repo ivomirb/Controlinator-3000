@@ -20,6 +20,8 @@ public:
 
 	bool IsActive( void ) const { return s_pCurrentScreen == this; }
 
+	static bool IsDrawAll( void ) { return s_DrawState.bDrawAll; }
+
 #if U8G2_FULL_BUFFER
 	static void ClearScreen( void );
 #if PARTIAL_SCREEN_UPDATE
