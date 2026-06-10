@@ -132,6 +132,7 @@ function GetDefaultSettings()
 			seek2: {travel:     1, feed:   50},
 			retract2: {travel:  5, feed: 1000},
 			location: {X: 0, Y: 0, Z: 0},
+			randomXY: 0,
 		},
 
 		// macros
@@ -218,8 +219,9 @@ function GenerateStatus2String(s)
 	if (g_PendantSettings.toolProbe.style != "disable")
 	{
 		tlo += g_TloRefZ == undefined ? 2 : 6;
-		if (Math.abs(s.machine.position.work.x + s.machine.position.offset.x - g_PendantSettings.toolProbe.location.X) <= 1 &&
-				Math.abs(s.machine.position.work.y + s.machine.position.offset.y - g_PendantSettings.toolProbe.location.Y) <= 1)
+		var distance = g_PendantSettings.toolProbe.randomXY > 0 ? g_PendantSettings.toolProbe.randomXY + 1 : 1;
+		if (Math.abs(s.machine.position.work.x + s.machine.position.offset.x - g_PendantSettings.toolProbe.location.X) <= distance &&
+				Math.abs(s.machine.position.work.y + s.machine.position.offset.y - g_PendantSettings.toolProbe.location.Y) <= distance)
 		{
 			tlo += 8;
 		}
@@ -1540,7 +1542,14 @@ function HandleProbeCommand(command)
 		var feedZ = grblParams["$112"];
 		var feedXY = grblParams["$110"];
 		var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.toolProbe.location.Z.toFixed(3) + " F" + feedZ;
-		gcode += "\n$J=G53 G21 G90 X" + g_PendantSettings.toolProbe.location.X.toFixed(3) + " Y" + g_PendantSettings.toolProbe.location.Y.toFixed(3) + " F" + feedXY;
+		var probeX = g_PendantSettings.toolProbe.location.X;
+		var probeY = g_PendantSettings.toolProbe.location.Y;
+		if (g_PendantSettings.toolProbe.randomXY > 0)
+		{
+			probeX += g_PendantSettings.toolProbe.randomXY * (Math.random() * 2 - 1);
+			probeY += g_PendantSettings.toolProbe.randomXY * (Math.random() * 2 - 1);
+		}
+		gcode += "\n$J=G53 G21 G90 X" + probeX.toFixed(3) + " Y" + probeY.toFixed(3) + " F" + feedXY;
 		sendGcode(gcode);
 	}
 }
@@ -2559,11 +2568,18 @@ Z Up always moves at full speed">Down Jog Speed</label>
   </div>
 </div>
 
-<div id="PendantTab34" class="row mb-2 pt-1 border-top bd-gray">
+<div id="PendantTab34" class="row mb-2 mt-2">
+  <label class="cell-sm-3 pt-1" title="XY randomization to reduce damage to the probe surface">Randomize Location</label>
+  <div class="cell-sm-3">
+    <input id="PendantToolRandomXY" type="number" style="text-align:right;" data-role="input" data-append="mm" data-clear-button="false" data-editable="true" />
+  </div>
+</div>
+
+<div id="PendantTab35" class="row mb-2 pt-1 border-top bd-gray">
   <label class="cell-sm-6">First Pass</label>
 </div>
 
-<div id="PendantTab35" class="row mb-2">
+<div id="PendantTab36" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Initial movement to measure the tool">Seek</label>
   <div class="cell-sm-4">
     <input id="PendantToolSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
@@ -2573,7 +2589,7 @@ Z Up always moves at full speed">Down Jog Speed</label>
   </div>
 </div>
 
-<div id="PendantTab36" class="row mb-2">
+<div id="PendantTab37" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Retraction after the tool probe was touched.
 Use short distance and slower speed if there is a second pass">Retract</label>
   <div class="cell-sm-4">
@@ -2584,11 +2600,11 @@ Use short distance and slower speed if there is a second pass">Retract</label>
   </div>
 </div>
 
-<div id="PendantTab37" class="row mb-2 pt-1 border-top bd-gray">
+<div id="PendantTab38" class="row mb-2 pt-1 border-top bd-gray">
   <label class="cell-sm-6">Second Pass</label>
 </div>
 
-<div id="PendantTab38" class="row mb-2">
+<div id="PendantTab39" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Second movement to measure the tool. Needs to be larger than the Retract from the first pass.
 Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
   <div class="cell-sm-4">
@@ -2599,7 +2615,7 @@ Use shorter distance and slower speed than the first pass for better accuracy">S
   </div>
 </div>
 
-<div id="PendantTab39" class="row mb-2">
+<div id="PendantTab40" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Retraction after the tool probe was touched">Retract</label>
   <div class="cell-sm-4">
     <input id="PendantToolRetract2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
@@ -2812,8 +2828,8 @@ window.SelectSettingsTab = function(index)
 	ShowElement($('#PendantTab31'), tab3);
 
 	var toolStyle = $('#PendantToolStyle').val();
-	ShowElement($('#PendantTab32,#PendantTab33,#PendantTab35,#PendantTab36'), tab3 && toolStyle != "disable");
-	ShowElement($('#PendantTab34,#PendantTab37,#PendantTab38,#PendantTab39'), tab3 && toolStyle == "dual");
+	ShowElement($('#PendantTab32,#PendantTab33,#PendantTab34,#PendantTab36,#PendantTab37'), tab3 && toolStyle != "disable");
+	ShowElement($('#PendantTab35,#PendantTab38,#PendantTab39,#PendantTab40'), tab3 && toolStyle == "dual");
 
 	ShowElement($('#PendantTab41,#PendantTab42,#PendantTab43,#PendantTab44,#PendantTab45,#PendantTab46,#PendantTab47,#PendantTab48'), tab4);
 
@@ -2904,6 +2920,7 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.toolProbe.style = $('#PendantToolStyle').val();
 	g_PendantSettings.toolProbe.downSpeed = Math.min(Math.max($('#PendantToolDown').val(), 10), 100);
 	g_PendantSettings.toolProbe.location = {X: Number($('#PendantToolX').val()), Y: Number($('#PendantToolY').val()), Z: Number($('#PendantToolZ').val())};
+	g_PendantSettings.toolProbe.randomXY = Number($('#PendantToolRandomXY').val());
 	g_PendantSettings.toolProbe.seek1 = {travel: Number($('#PendantToolSeek1T').val()), feed: Number($('#PendantToolSeek1F').val())};
 	g_PendantSettings.toolProbe.retract1 = {travel: Number($('#PendantToolRetract1T').val()), feed: Number($('#PendantToolRetract1F').val())};
 	g_PendantSettings.toolProbe.seek2 = {travel: Number($('#PendantToolSeek2T').val()), feed: Number($('#PendantToolSeek2F').val())};
@@ -3020,6 +3037,7 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantToolX').val(settings.toolProbe.location.X);
 	$('#PendantToolY').val(settings.toolProbe.location.Y);
 	$('#PendantToolZ').val(settings.toolProbe.location.Z);
+	$('#PendantToolRandomXY').val(settings.toolProbe.randomXY > 0 ? settings.toolProbe.randomXY : 0);
 	$('#PendantToolDown').val(settings.toolProbe.downSpeed);
 	$('#PendantToolSeek1T').val(settings.toolProbe.seek1.travel);
 	$('#PendantToolSeek1F').val(settings.toolProbe.seek1.feed);
