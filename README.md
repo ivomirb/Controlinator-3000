@@ -32,10 +32,11 @@ Issues and future developments: [/docs/future.md](/docs/future.md)
 
 ## Versions
 
-### 1.3 - April 2026
+### 1.3 - June 2026
 * Few bug fixes
 * Job actions (run, pause, stop) are logged to the console
 * Improved diagnostics for disconnects and freezes
+* Randomize tool probe location to reduce surface wear
 
 ### 1.2 - August 2025
 * New option to use the probe to measure Z height without changing the work coordinate system

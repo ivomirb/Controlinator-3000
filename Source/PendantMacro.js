@@ -2569,7 +2569,7 @@ Z Up always moves at full speed">Down Jog Speed</label>
 </div>
 
 <div id="PendantTab34" class="row mb-2 mt-2">
-  <label class="cell-sm-3 pt-1" title="XY randomization to reduce damage to the probe surface">Randomize Location</label>
+  <label class="cell-sm-3 pt-1" title="XY randomization to reduce wear to the probe surface">Randomize Location</label>
   <div class="cell-sm-3">
     <input id="PendantToolRandomXY" type="number" style="text-align:right;" data-role="input" data-append="mm" data-clear-button="false" data-editable="true" />
   </div>
