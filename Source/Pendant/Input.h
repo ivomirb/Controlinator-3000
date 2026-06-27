@@ -193,6 +193,16 @@ int16_t EncoderDrainValue( void )
 
 #else
 
+#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega4808__) || defined(__AVR_ATmega4809__)
+
+typedef uint8_t PinRegisterType;
+
+#elif defined(ARDUINO_NANO_R4)
+
+typedef uint16_t PinRegisterType;
+
+#endif
+
 #define NE_STATE_MASK 0b00000111
 #define NE_DELTA_MASK 0b00011000
 #define NE_INCREMENT_DELTA 0b00001000
@@ -218,8 +228,8 @@ const uint8_t g_NE_halfPulseTransitionTable[][4] PROGMEM =
 	{ NE_DEBOUNCE_3, NE_DETENT_1, NE_DEBOUNCE_2, NE_DETENT_1 }  // DETENT_1 0b111
 };
 
-uint8_t *g_aPin_register, *g_bPin_register;
-uint8_t g_aPin_bitmask, g_bPin_bitmask;
+const volatile PinRegisterType *g_aPin_register, *g_bPin_register;
+PinRegisterType g_aPin_bitmask, g_bPin_bitmask;
 
 enum EncoderClick {
 	NoClick, DownClick, UpClick
@@ -234,8 +244,8 @@ struct EncoderState
 volatile EncoderState g_EncoderLiveState;
 volatile bool g_EncoderStateChanged;
 EncoderState g_EncoderLocalState;
-volatile uint8_t g_EncoderPinAValue, g_EncoderPinBValue;
-volatile uint8_t g_CurrentEncoderState;
+volatile PinRegisterType g_EncoderPinAValue, g_EncoderPinBValue;
+volatile PinRegisterType g_CurrentEncoderState;
 
 bool GetEncoderState(EncoderState &state)
 {
@@ -243,7 +253,8 @@ bool GetEncoderState(EncoderState &state)
 	if (localStateChanged)
 	{
 		noInterrupts();
-		memcpy(&g_EncoderLocalState, &g_EncoderLiveState, sizeof(EncoderState));
+		g_EncoderLocalState.currentValue = g_EncoderLiveState.currentValue;
+		g_EncoderLocalState.currentClick = g_EncoderLiveState.currentClick;
 		g_EncoderStateChanged = false;
 		interrupts();
 	}
@@ -283,7 +294,7 @@ void EncoderPinChangeHandler(uint8_t index)
 
 void EncoderPinAChange( void )
 {
-	uint8_t newPinValue = ((*g_aPin_register) & g_aPin_bitmask) ? 1 : 0;
+	PinRegisterType newPinValue = ((*g_aPin_register) & g_aPin_bitmask) ? 1 : 0;
 	if (newPinValue != g_EncoderPinAValue)
 	{
 		g_EncoderPinAValue = newPinValue;
@@ -293,7 +304,7 @@ void EncoderPinAChange( void )
 
 void EncoderPinBChange( void )
 {
-	uint8_t newPinValue = ((*g_bPin_register) & g_bPin_bitmask) ? 1 : 0;
+	PinRegisterType newPinValue = ((*g_bPin_register) & g_bPin_bitmask) ? 1 : 0;
 	if (newPinValue != g_EncoderPinBValue)
 	{
 		g_EncoderPinBValue = newPinValue;

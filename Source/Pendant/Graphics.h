@@ -5,10 +5,15 @@ u8g2_t u8g2;
 void InitializeGraphics( void )
 {
 #ifndef EMULATOR
-#if U8G2_FULL_BUFFER
-	u8g2_Setup_ssd1309_i2c_128x64_noname0_f(&u8g2, U8G2_R0, u8x8_byte_arduino_hw_i2c, u8x8_gpio_and_delay_arduino);
+#if defined(ARDUINO_NANO_R4)
+	const u8x8_msg_cb &i2c = u8x8_byte_arduino_2nd_hw_i2c; // on Nano R4 use the second Wire interface for the Qwiic connector (ignore this if using regular I2C)
 #else
-	u8g2_Setup_ssd1309_i2c_128x64_noname0_2(&u8g2, U8G2_R0, u8x8_byte_arduino_hw_i2c, u8x8_gpio_and_delay_arduino);
+	const u8x8_msg_cb &i2c = u8x8_byte_arduino_hw_i2c;
+#endif
+#if U8G2_FULL_BUFFER
+	u8g2_Setup_ssd1309_i2c_128x64_noname0_f(&u8g2, U8G2_R0, i2c, u8x8_gpio_and_delay_arduino);
+#else
+	u8g2_Setup_ssd1309_i2c_128x64_noname0_2(&u8g2, U8G2_R0, i2c, u8x8_gpio_and_delay_arduino);
 #endif
 	u8x8_SetPin_HW_I2C(u8g2_GetU8x8(&u8g2), U8X8_PIN_NONE, U8X8_PIN_NONE, U8X8_PIN_NONE);
 	u8g2_InitDisplay(&u8g2);

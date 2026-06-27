@@ -1,7 +1,11 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <EEPROM.h>
+#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega4808__) || defined(__AVR_ATmega4809__)
 #include <avr/wdt.h>
+#elif defined(ARDUINO_NANO_R4)
+#include <WDT.h>
+#endif
 
 #ifdef U8X8_HAVE_HW_I2C
 #include <Wire.h>
@@ -29,20 +33,20 @@ static_assert(sizeof(g_ButtonPins) == BUTTON_COUNT, "wrong button count");
 
 void InitializeInput( void )
 {
-  for (uint16_t i = 0; i < BUTTON_COUNT; i++)
-  {
-    pinMode(pgm_read_byte(&g_ButtonPins[i]), INPUT_PULLUP);
-  }
+	for (uint16_t i = 0; i < BUTTON_COUNT; i++)
+	{
+		pinMode(pgm_read_byte(&g_ButtonPins[i]), INPUT_PULLUP);
+	}
 	pinMode(g_JoyPinX, INPUT);
 	pinMode(g_JoyPinY, INPUT);
 }
 
 uint16_t ReadButtons( void )
 {
-  uint16_t buttons = 0;
-  for (uint16_t i = 0; i < BUTTON_COUNT; i++)
-  {
-    if (digitalRead(pgm_read_byte(&g_ButtonPins[i])) == LOW) buttons |= 1 << i;
-  }
-  return buttons;
+	uint16_t buttons = 0;
+	for (uint16_t i = 0; i < BUTTON_COUNT; i++)
+	{
+		if (digitalRead(pgm_read_byte(&g_ButtonPins[i])) == LOW) buttons |= 1 << i;
+	}
+	return buttons;
 }

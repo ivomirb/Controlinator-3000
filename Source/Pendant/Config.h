@@ -43,6 +43,13 @@
 #define USE_NEW_ENCODER 0 // NewEncoder doesn't recognize ATmega4808 out of the box. You need to modify interrupt_pins.h to get it to compile
 #define USE_WATCHDOG 1
 
+#elif defined(ARDUINO_NANO_R4)
+
+#define U8G2_FULL_BUFFER 1
+#define PARTIAL_SCREEN_UPDATE 1
+#define USE_NEW_ENCODER 0 // NewEncoder doesn't recognize Nano R4 out of the box. The pins definitions are different
+#define USE_WATCHDOG 1
+
 #elif defined(_WIN32) // Pendant emulator
 
 #define USE_WATCHDOG 0

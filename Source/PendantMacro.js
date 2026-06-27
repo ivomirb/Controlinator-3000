@@ -2010,6 +2010,7 @@ function TryComHandler(data)
 			g_StatusCounter = 0;
 
 			localStorage.setItem("PendantPort", g_PendantPort.path);
+			WritePort("SETTINGS");
 			HandleHandshake();
 		}
 	}

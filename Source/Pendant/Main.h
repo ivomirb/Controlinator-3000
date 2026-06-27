@@ -215,6 +215,12 @@ void HandleHandshake( void )
 {
 	Serial.print(ROMSTR("DANT:"));
 	Serial.println(ROMSTR(PENDANT_VERSION));
+	g_LastPingTime = g_LastPongTime = g_CurrentTime;
+}
+
+// Sends the current ROM settings
+void HandleSettings( void )
+{
 	Serial.print(ROMSTR("NAME:"));
 	Serial.println(g_RomSettings.pendantName);
 	Serial.print(ROMSTR("CALIBRATION:"));
@@ -224,7 +230,6 @@ void HandleHandshake( void )
 		Serial.print(g_StrComma);
 	}
 	Serial.println(g_RomSettings.calibration[7]);
-	g_LastPingTime = g_LastPongTime = g_CurrentTime;
 }
 
 // Processes a command from the PC
@@ -234,6 +239,11 @@ void ProcessCommand( const char *command, unsigned long time )
 	if (strcmp(command, "PEN") == 0)
 	{
 		HandleHandshake();
+		return;
+	}
+	if (strcmp(command, "SETTINGS") == 0)
+	{
+		HandleSettings();
 		return;
 	}
 	if (strcmp(command, "BYE") == 0)
@@ -327,6 +337,7 @@ void ProcessCommand( const char *command, unsigned long time )
 void setup( void )
 {
 #ifndef EMULATOR
+	pinMode(LED_BUILTIN, OUTPUT);
 	// HACK: 4808-based Arduino clones have I2C on pins D4 and D5 instead of A4 and A5. To support both on the same
 	// PCB, I have the pairs shorted together. For safety, the unused pair needs to be marked as INPUT. So
 	// here initialize all 4 pins as inputs to avoid interfering with I2C.
@@ -343,12 +354,22 @@ void setup( void )
 	InitializeEncoder();
 	g_CurrentTime = millis();
 #if USE_WATCHDOG
-	if (InitializeWatchdog())
+	CrashReason crash = InitializeWatchdog();
+	if (crash != CRASH_NONE)
 	{
 		g_bWDTCrash = true;
 		HandleHandshake();
 		char dialogText[60];
-		strcpy_P(dialogText, PSTR("10001|CRASH DETECTED|Watchdog detected|a crash.||,DISMISS"));
+#if !defined(__AVR_ATmega328P__)
+		if (crash == CRASH_BROWNOUT)
+		{
+			strcpy_P(dialogText, PSTR("10001|CRASH DETECTED|Brownout caused|a crash.||,DISMISS"));
+		}
+		else
+#endif
+		{
+			strcpy_P(dialogText, PSTR("10001|CRASH DETECTED|Watchdog detected|a crash.||,DISMISS"));
+		}
 		g_DialogScreen.Activate(g_CurrentTime);
 		g_DialogScreen.ParseDialog(dialogText);
 	}
@@ -365,26 +386,6 @@ void setup( void )
 int g_Frame = 0;
 uint16_t g_Dtt = 0;
 uint16_t g_DtMax = 0;
-
-#if PARTIAL_SCREEN_UPDATE
-bool g_bJoystickDown = false;
-#endif
-
-// Draws a pixel in the corner if the joystick button is clicked. This is used to quickly test if the pendant is responsive
-void UpdateJoystickPixel( void )
-{
-	bool bJoystickDown = TestBit(g_ButtonState, BUTTON_JOYSTICK);
-#if PARTIAL_SCREEN_UPDATE
-	if (g_bJoystickDown != bJoystickDown || BaseScreen::IsDrawAll() || IsDirtyPixel(127, 0))
-	{
-		g_bJoystickDown = bJoystickDown;
-#else
-	{
-#endif
-		SetDrawColor(bJoystickDown ? 1 : 0);
-		DrawBox(127, 0, 1, 1);
-	}
-}
 
 void loop( void )
 {
@@ -517,7 +518,6 @@ void loop( void )
 	BaseScreen::ClearScreen();
 	SetDrawColor(1);
 	BaseScreen::s_pCurrentScreen->Draw();
-	UpdateJoystickPixel();
 #if PARTIAL_SCREEN_UPDATE
 	BaseScreen::UpdateScreen();
 #else
@@ -529,9 +529,13 @@ void loop( void )
 	{
 		SetDrawColor(1);
 		BaseScreen::s_pCurrentScreen->Draw();
-		UpdateJoystickPixel();
 	}
 	while (u8g2_NextPage(&u8g2));
+#endif
+
+#ifndef EMULATOR
+// Turn on the onboard LED when the joystick button is clicked. This is used to quickly test if the pendant is responsive
+	digitalWrite(LED_BUILTIN, TestBit(g_ButtonState, BUTTON_JOYSTICK) ? HIGH : LOW);
 #endif
 
 	g_Frame++;
