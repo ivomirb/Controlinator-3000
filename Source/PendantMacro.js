@@ -6,7 +6,7 @@
 // You can connect a capacitor between RST and GND, which will disable the reset and improve the speed of the initial connection.
 // If this is the case, set the value to false.
 // Also if you use a microcontroller that is programmed via the UPDI pin instead of USB, set this to false as well.
-const ARDUINO_RESETS_ON_CONNECT = true;
+const ARDUINO_RESETS_ON_CONNECT = false;
 
 // This flag causes the Z Down button in the probing screen to use the G38.3 command instead of $J, which will stop if the probe is touched.
 // It is not entirely safe because plunging into a hard probe at jogging speeds is never safe, but might reduce the damage to the probe or the endmill.

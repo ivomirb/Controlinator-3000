@@ -13,19 +13,6 @@ void WelcomeScreen::Draw( void )
 	const bool bDrawName = true, bDrawConnected = true;
 #endif
 
-	if (s_DrawState.bDrawAll)
-	{
-		if (g_bTimedOut)
-		{
-			DrawTextXY(13, 36, ROMSTR("Disconnected"));
-		}
-		else
-		{
-			DrawTextXY(13, 36, ROMSTR("Connected to PC"));
-		}
-		DrawTextXY(13, 52, ROMSTR("Connected to CNC"));
-		DrawTextXY(1, 52, STRING_UNCHECKED);
-	}
 	if (bDrawName)
 	{
 		DrawBox(0, 7, 128, 14);
@@ -36,7 +23,17 @@ void WelcomeScreen::Draw( void )
 	if (bDrawConnected)
 	{
 		SetDrawColor(1);
+		if (!g_bConnected && g_bTimedOut)
+		{
+			DrawTextXY(13, 36, ROMSTR("Disconnected   "));
+		}
+		else
+		{
+			DrawTextXY(13, 36, ROMSTR("Connected to PC"));
+		}
 		DrawTextXY(1, 36, g_bConnected ? STRING_CHECKED : STRING_UNCHECKED);
+		DrawTextXY(13, 52, ROMSTR("Connected to CNC"));
+		DrawTextXY(1, 52, STRING_UNCHECKED);
 	}
 }
 
