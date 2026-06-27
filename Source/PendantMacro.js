@@ -26,7 +26,7 @@ const WHEEL_JOG_AHEAD_TIME = 600; // up to 600ms of jog time submitted to Grbl
 const WHEEL_JOG_STOP_TIME = 100; // the jog will stop 100ms after the last click
 
 // These must match Main.h
-const PENDANT_VERSION = "1.3";
+const PENDANT_VERSION = "1.4";
 const PENDANT_BAUD_RATE = 38400;
 
 // Must match Input.h

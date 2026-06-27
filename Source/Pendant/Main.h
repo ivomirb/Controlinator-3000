@@ -1,4 +1,4 @@
-#define PENDANT_VERSION "1.3" // must match Pendant.js
+#define PENDANT_VERSION "1.4" // must match Pendant.js
 #define PENDANT_BAUD_RATE 38400 // must match Pendant.js
 
 #include "Config.h"
