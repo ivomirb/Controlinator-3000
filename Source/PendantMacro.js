@@ -26,7 +26,7 @@ const WHEEL_JOG_AHEAD_TIME = 600; // up to 600ms of jog time submitted to Grbl
 const WHEEL_JOG_STOP_TIME = 100; // the jog will stop 100ms after the last click
 
 // These must match Main.h
-const PENDANT_VERSION = "1.4";
+const PENDANT_VERSION = "1.5";
 const PENDANT_BAUD_RATE = 38400;
 
 // Must match Input.h
@@ -67,7 +67,6 @@ var g_LastProbeZ;
 var g_SafeStopPending = 0; // 0 - ignore, 1 - clear on idle, 2 - don't clear on idle
 var g_LastBusyTime = undefined;
 var g_LastUpdateTime = undefined;
-var g_bOkEventSupported = false; // the stock Control sofware doesn't send "ok" event. a custom version might
 
 // This table must match the names and order in MachineStatus.h
 const g_StatusMap =
@@ -115,6 +114,7 @@ function GetDefaultSettings()
 		zProbe: {
 			style: "single",
 			downSpeed: 50,
+			nudgeSpeed: 25,
 			seek1: {travel:    15, feed:  100},
 			retract1: {travel:  5, feed: 1000},
 			seek2: {travel:     1, feed:   50},
@@ -309,17 +309,12 @@ function IsStableIdle()
 	return false;
 }
 
-// Handles the "ok" event from the Control software. The stock version of the software doesn't send that event.
-// You will need a custom version that does
+// Handles the "ok" event from the Control software
 function HandleOk(command)
 {
-	if (typeof(command) == 'string')
+	if (typeof(command) == 'string' && g_JogXYState != undefined && command.startsWith("$J="))
 	{
-		g_bOkEventSupported = true;
-		if (g_JogXYState != undefined && command.startsWith("$J="))
-		{
-			UpdateJogXY();
-		}
+		UpdateJogXY();
 	}
 }
 
@@ -335,20 +330,6 @@ function HandleJobComplete(data)
 	if (g_PendantPort == undefined)
 	{
 		return;
-	}
-
-	if (!g_bAdvancedJogXY)
-	{
-		// if the "ok" event is not supported, we use a heuristic to detect when a command is processed and it is safe to cancel the current jog
-		if (data.failed && g_JogCancelPendingTime != undefined)
-		{
-			if (Date.now() - g_JogCancelPendingTime < 300)
-			{
-				socket.emit('stop', {stop: false, jog: true, abort: false});
-			}
-			g_JogCancelPendingTime = undefined;
-			return;
-		}
 	}
 
 	if (!data.failed && data.jobStartTime && data.jobEndTime && laststatus.comms.runStatus != "Alarm")
@@ -623,7 +604,6 @@ var g_JogXYLocation; // last known joystick jog location in MCS. always in mm
 var g_JogXYTimer;
 var g_JogJoystick = {X: 0, Y: 0}; // last received joystick position
 var g_JogCancelPendingTime = undefined; // to cancel jog on next job complete
-var g_bAdvancedJogXY = false; // set to true if the "ok" event is supported. it makes the jogging a bit smoother and more responsive
 var g_JogXYState = undefined; // true - running, false - stopping, undefined - inactive
 var g_JogXYTime;
 
@@ -767,23 +747,9 @@ function BeginJogXY()
 		Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
 	};
 
-	g_bAdvancedJogXY = g_bOkEventSupported;
-	if (g_bAdvancedJogXY)
-	{
-		g_JogXYTime = Date.now() - 200;
-		g_JogXYState = true;
-		UpdateJogXY();
-	}
-	else
-	{
-		// if the "ok" event is not supported, pre-fill the queue with tiny jogs to keep Grbl busy, as we don't quite
-		// know when a command is processed and have to keep pushing jogs into the queue
-		for (var i = 0; i < 20; i++)
-		{
-			var speed = (i+5)/25; // gradually increase the speed
-			QueueJogXY(g_JogJoystick.X*speed, g_JogJoystick.Y*speed, 0.02);
-		}
-	}
+	g_JogXYTime = Date.now() - 200;
+	g_JogXYState = true;
+	UpdateJogXY();
 }
 
 // Queues a jog increment. dt - time duration in seconds
@@ -848,6 +814,7 @@ function HandleJogCommand(command)
 	// RIGX0.010 - round X to 0.010 inches in global space (must be idle)
 	// WMX2*0.10 - wheel X by 2*0.10mm (must be idle or jogging)
 	// JXY-2,3 - joystick is at -2,3
+	// NXY-2,3 - joystick is at -2,3 (nudge speed)
 
 	if (command[0] == '0')
 	{
@@ -1006,97 +973,48 @@ function HandleJogCommand(command)
 		return;
 	}
 
-	if (command.startsWith("JXY"))
+	if (command.startsWith("JXY") || command.startsWith("NXY"))
 	{
 		// joystick input
 		var xy = command.substring(3).split(',');
 		g_JogJoystick = {X: xy[0], Y: xy[1]};
+		if (command.startsWith("NXY"))
+		{
+			g_JogJoystick.X *= g_PendantSettings.zProbe.nudgeSpeed / 100;
+			g_JogJoystick.Y *= g_PendantSettings.zProbe.nudgeSpeed / 100;
+		}
 
 		if (xy[0] == 0 && xy[1] == 0)
 		{
 			// joystick is released, stop immediately
-			if (g_bAdvancedJogXY)
+			if (g_JogXYState == true)
 			{
-				// if "ok" is supported, set the state to false, which will issue a cancel command on the next "ok" event
-				if (g_JogXYState == true)
-				{
-					g_JogXYState = false;
-				}
-				if (g_JogXYTimer != undefined)
-				{
-					clearInterval(g_JogXYTimer);
-					g_JogXYTimer = undefined;
-				}
+				g_JogXYState = false;
 			}
-			else
+			if (g_JogXYTimer != undefined)
 			{
-				// otherwise stop immediately, and queue up a second stop when the job is completed, just in case
-				if (g_JogXYLocation != undefined && !IsStableIdle())
-				{
-					socket.emit('stop', {stop: false, jog: true, abort: false});
-					if (laststatus.comms.runStatus != "Idle")
-					{
-						g_JogCancelPendingTime = Date.now();
-					}
-				}
-				g_JogXYLocation = undefined;
-				if (g_JogXYTimer != undefined)
-				{
-					clearInterval(g_JogXYTimer);
-					g_JogXYTimer = undefined;
-				}
+				clearInterval(g_JogXYTimer);
+				g_JogXYTimer = undefined;
 			}
 			return;
 		}
 
-		if (g_JogXYTimer == undefined)
+		if (g_JogXYTimer == undefined && g_JogXYState == undefined)
 		{
-			if (g_bOkEventSupported)
+			// just begin the jog on the next stable idle. the "ok" event handler will keep the jogs coming
+			if (IsStableIdle())
 			{
-				// if "ok" is supported, just begin the jog on the next stable idle. the "ok" event handler will keep the jogs coming
-				if (g_JogXYState == undefined)
+				BeginJogXY();
+			}
+			else
+			{
+				g_JogXYTimer = setInterval(function()
 				{
 					if (IsStableIdle())
 					{
 						BeginJogXY();
-					}
-					else
-					{
-						g_JogXYTimer = setInterval(function()
-						{
-							if (IsStableIdle())
-							{
-								BeginJogXY();
-								clearInterval(g_JogXYTimer);
-								g_JogXYTimer = undefined;
-							}
-						}, 100);
-					}
-				}
-			}
-			else
-			{
-				// otherwise start a persistent interval that will keep queueing jogs ever 100ms
-				if (IsStableIdle()/* && (xy[0] * xy[0] + xy[1] * xy[1]) * 4 > JOYSTICK_STEPS * JOYSTICK_STEPS*/)
-				{
-					BeginJogXY();
-				}
-				g_JogXYTime = g_JogXYLocation == undefined ? undefined : Date.now();
-				g_JogXYTimer = setInterval(function()
-				{
-					if (g_JogXYLocation == undefined)
-					{
-						if (laststatus.comms.runStatus == "Idle")
-						{
-							BeginJogXY();
-							g_JogXYTime = Date.now();
-						}
-					}
-					else
-					{
-						var t = Date.now();
-						QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, (t - g_JogXYTime) / 1000);
-						g_JogXYTime = t;
+						clearInterval(g_JogXYTimer);
+						g_JogXYTimer = undefined;
 					}
 				}, 100);
 			}
@@ -1649,7 +1567,7 @@ function PendantComHandler(data)
 		return;
 	}
 
-	if (COM_LOG_LEVEL >= 2 || (COM_LOG_LEVEL == 1 && data != "PING" && !data.startsWith("RAWJOY:") && !data.startsWith("JOG:W") && !data.startsWith("JOG:JXY")))
+	if (COM_LOG_LEVEL >= 2 || (COM_LOG_LEVEL == 1 && data != "PING" && !data.startsWith("RAWJOY:") && !data.startsWith("JOG:W") && !data.startsWith("JOG:JXY") && !data.startsWith("JOG:NXY")))
 	{
 		console.log("COM: ", data);
 	}
@@ -2010,8 +1928,8 @@ function TryComHandler(data)
 			g_StatusCounter = 0;
 
 			localStorage.setItem("PendantPort", g_PendantPort.path);
-			WritePort("SETTINGS");
 			HandleHandshake();
+			WritePort("SETTINGS");
 		}
 	}
 }
@@ -2086,6 +2004,12 @@ window.ConnectPendant = function()
 {
 	if (!g_PendantPort)
 	{
+		var version = laststatus.driver.version.split('.')[2];
+		if (version == undefined || version < 371)
+		{
+			printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>The pendant requires OpenBuilds v1.0.371 or later</span>")
+			return;
+		}
 		$('#ConnectPendant').addClass("disabled");
 		$('#DisconnectPendant').addClass("disabled");
 		printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Looking for pendant...</span>")
@@ -2470,6 +2394,13 @@ Z Up always moves at full speed">Down Jog Speed</label>
 </div>
 
 <div id="PendantTab23" class="row mb-2">
+  <label class="cell-sm-3 pt-1" title="Percentage of the rapid XY speed to use when nudging the XY position">XY Nudge Speed</label>
+  <div class="cell-sm-4">
+    <input id="PendantXYNudge" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
+  </div>
+</div>
+
+<div id="PendantTab24" class="row mb-2">
   <label class="cell-sm-3 pt-1">Plate Thickness</label>
   <div class="cell-sm-4">
     <input id="PendantZThickness" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="mm" data-editable="true" onchange="g_bZThicknessValid = true; $('#PendantResetZThickness').prop('disabled', false);" />
@@ -2479,7 +2410,7 @@ Z Up always moves at full speed">Down Jog Speed</label>
   </div>
 </div>
 
-<div id="PendantTab24" class="row mb-2">
+<div id="PendantTab25" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Check this to use the Z value from the probe contact instead of the position after the probing completes.
 They can differ by 0.1-0.2mm as the machine doesn't stop moving immediately on contact." >Use Exact Probe Result</label>
   <div class="cell-sm-4">
@@ -2487,11 +2418,11 @@ They can differ by 0.1-0.2mm as the machine doesn't stop moving immediately on c
   </div>
 </div>
 
-<div id="PendantTab25" class="row mb-2 pt-1 border-top bd-gray">
+<div id="PendantTab26" class="row mb-2 pt-1 border-top bd-gray">
   <label class="cell-sm-6">First Pass</label>
 </div>
 
-<div id="PendantTab26" class="row mb-2">
+<div id="PendantTab27" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Initial movement to locate the Z probe">Seek</label>
   <div class="cell-sm-4">
     <input id="PendantZSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
@@ -2501,7 +2432,7 @@ They can differ by 0.1-0.2mm as the machine doesn't stop moving immediately on c
   </div>
 </div>
 
-<div id="PendantTab27" class="row mb-2">
+<div id="PendantTab28" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Retraction after the Z probe was touched.
 Use short distance and slower speed if there is a second pass">Retract</label>
   <div class="cell-sm-4">
@@ -2512,11 +2443,11 @@ Use short distance and slower speed if there is a second pass">Retract</label>
   </div>
 </div>
 
-<div id="PendantTab28" class="row mb-2 pt-1 border-top bd-gray">
+<div id="PendantTab29" class="row mb-2 pt-1 border-top bd-gray">
   <label class="cell-sm-6">Second Pass</label>
 </div>
 
-<div id="PendantTab29" class="row mb-2">
+<div id="PendantTab210" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Second movement to locate the Z probe. Needs to be larger than the Retract from the first pass.
 Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
   <div class="cell-sm-4">
@@ -2527,7 +2458,7 @@ Use shorter distance and slower speed than the first pass for better accuracy">S
   </div>
 </div>
 
-<div id="PendantTab210" class="row mb-2">
+<div id="PendantTab211" class="row mb-2">
   <label class="cell-sm-3 pt-1" title="Retraction after the Z probe was touched">Retract</label>
   <div class="cell-sm-4">
     <input id="PendantZRetract2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
@@ -2822,9 +2753,9 @@ window.SelectSettingsTab = function(index)
 	ShowElement($('#PendantTab15'), tab1 && displayUnits == "inches");
 
 	var zStyle = $('#PendantZStyle').val();
-	ShowElement($('#PendantTab21,#PendantTab22'), tab2);
-	ShowElement($('#PendantTab23,#PendantTab24,#PendantTab26,#PendantTab27'), tab2 && zStyle != "default");
-	ShowElement($('#PendantTab25,#PendantTab28,#PendantTab29,#PendantTab210'), tab2 && zStyle == "dual");
+	ShowElement($('#PendantTab21,#PendantTab22,#PendantTab23'), tab2);
+	ShowElement($('#PendantTab24,#PendantTab25,#PendantTab27,#PendantTab28'), tab2 && zStyle != "default");
+	ShowElement($('#PendantTab26,#PendantTab29,#PendantTab210,#PendantTab211'), tab2 && zStyle == "dual");
 
 	ShowElement($('#PendantTab31'), tab3);
 
@@ -2911,6 +2842,7 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.jobChecklist = $('#PendantJobChecklist').val();
 	g_PendantSettings.zProbe.style = $('#PendantZStyle').val();
 	g_PendantSettings.zProbe.downSpeed = Math.min(Math.max($('#PendantZDown').val(), 10), 100);
+	g_PendantSettings.zProbe.nudgeSpeed = Math.min(Math.max($('#PendantXYNudge').val(), 10), 100);
 	g_PendantSettings.zProbe.thickness = g_bZThicknessValid ? Number($('#PendantZThickness').val()) : undefined;
 	g_PendantSettings.zProbe.useProbeResult = $('#PendantUseProbe').prop('checked');
 	g_PendantSettings.zProbe.seek1 = {travel: Number($('#PendantZSeek1T').val()), feed: Number($('#PendantZSeek1F').val())};
@@ -3014,6 +2946,7 @@ function UpdateSettingsControls(settings, romSettings)
 
 	$('#PendantUseProbe').prop('checked', g_PendantSettings.zProbe.useProbeResult);
 	$('#PendantZDown').val(settings.zProbe.downSpeed);
+	$('#PendantXYNudge').val(settings.zProbe.nudgeSpeed);
 	$('#PendantZSeek1T').val(settings.zProbe.seek1.travel);
 	$('#PendantZSeek1F').val(settings.zProbe.seek1.feed);
 	$('#PendantZRetract1T').val(settings.zProbe.retract1.travel);
@@ -3213,7 +3146,7 @@ function InitializePendantPlugin()
 		$('#DisconnectPendant').on('click', DisconnectPendant);
 	}
 
-	// delay until the next frame to allow the UI to update
+	// delay auto connect for 1 second to allow systems to initialize
 	setTimeout(function()
 	{
 		DisconnectPendant();
@@ -3222,7 +3155,7 @@ function InitializePendantPlugin()
 		{
 			ConnectPendant();
 		}
-	}, 0);
+	}, 1000);
 }
 
 CleanupOldVersion()

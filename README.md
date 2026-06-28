@@ -32,6 +32,12 @@ Issues and future developments: [/docs/future.md](/docs/future.md)
 
 ## Versions
 
+### 1.5 - July 2026
+* Added support for Arduino Nano R4
+* The joystick can be used on the probing screen to nudge the XY position
+* Holding down Z on the jog screen moves up
+* NOTE: Requires OpenBuilds v1.0.371 or later
+
 ### 1.3 - June 2026
 * Few bug fixes
 * Job actions (run, pause, stop) are logged to the console

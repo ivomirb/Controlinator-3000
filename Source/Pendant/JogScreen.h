@@ -15,12 +15,20 @@ void JogScreen::SetAxis( uint8_t axis )
 {
 	auto *pState = GetActiveState();
 	uint8_t old = pState->m_Axis;
+	pState->m_Axis = axis;
 	if (old == 3 && axis != 3)
 	{
 		Serial.print(g_StrJOG2);
 		Serial.println(ROMSTR("JXY0,0"));
 	}
-	pState->m_Axis = axis;
+	else if (old != 3 && axis == 3)
+	{
+		GetJoystick(&pState->m_OldJoyX, &pState->m_OldJoyY);
+	}
+	if (old == 4 && axis != 4)
+	{
+		CancelJogUp();
+	}
 }
 
 JogScreen::JogScreen( void )
@@ -39,12 +47,13 @@ void JogScreen::Draw( void )
 	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->bWorkSpace != g_bWorkSpace ||
 		pDrawState->bShowInches != g_bShowInches || pDrawState->axis != pState->m_Axis ||
 		pDrawState->bShowStop != pState->m_bShowStop || pDrawState->bShowActions != pState->m_bShowActions ||
-		pDrawState->bShowAlign != pState->m_bShowAlign || pDrawState->stepIndex != m_StepIndex;
+		pDrawState->bShowZUp != pState->m_bShowZUp || pDrawState->bShowAlign != pState->m_bShowAlign || pDrawState->stepIndex != m_StepIndex;
 	pDrawState->bWorkSpace = g_bWorkSpace;
 	pDrawState->bShowInches = g_bShowInches;
 	pDrawState->axis = pState->m_Axis;
 	pDrawState->bShowStop = pState->m_bShowStop;
 	pDrawState->bShowActions = pState->m_bShowActions;
+	pDrawState->bShowZUp = pState->m_bShowZUp;
 	pDrawState->bShowAlign = pState->m_bShowAlign;
 	pDrawState->stepIndex = m_StepIndex;
 	if (bDrawAll && !s_DrawState.bDrawAll)
@@ -69,9 +78,9 @@ void JogScreen::Draw( void )
 	{
 		DrawMachineStatus(g_StrJOG, 3);
 		DrawText(13, 1, g_bWorkSpace ? g_StrWCS : g_StrMCS);
-		if ((pState->m_Axis & (pState->m_Axis-1)) == 0)
+
+		if ((pState->m_Axis & (pState->m_Axis-1)) == 0) // only one axis is selected
 		{
-			// only one axis is selected
 			uint16_t step = m_StepRates[m_StepIndex];
 			if (pState->m_bShowAlign)
 			{
@@ -110,6 +119,7 @@ void JogScreen::Draw( void )
 			// XY selected
 			DrawUnusedButtons(0x68);
 		}
+
 		DrawButton(BUTTON_BACK, g_StrBack, 4, false);
 	}
 
@@ -155,21 +165,28 @@ void JogScreen::Draw( void )
 
 	if (bDrawZ)
 	{
-		PrintZ(g_TextBuf);
-		if (pState->m_Axis & 4)
+		if (pState->m_bShowZUp)
 		{
-			SetDrawColor(1);
-			DrawBox(0, g_Rows[3] - 1, 8, 10);
-			SetDrawColor(0);
-			DrawText(0, 3, g_StrBoldZ);
-			SetDrawColor(1);
-			DrawTextBold(2, 3, g_TextBuf);
+			DrawButton(BUTTON_Z, ROMSTR("Z Up"), 4, true);
 		}
 		else
 		{
-			SetDrawColor(1);
-			DrawText(0, 3, g_StrZ);
-			DrawText(2, 3, g_TextBuf);
+			PrintZ(g_TextBuf);
+			if (pState->m_Axis & 4)
+			{
+				SetDrawColor(1);
+				DrawBox(0, g_Rows[3] - 1, 8, 10);
+				SetDrawColor(0);
+				DrawText(0, 3, g_StrBoldZ);
+				SetDrawColor(1);
+				DrawTextBold(2, 3, g_TextBuf);
+			}
+			else
+			{
+				SetDrawColor(1);
+				DrawText(0, 3, g_StrZ);
+				DrawText(2, 3, g_TextBuf);
+			}
 		}
 	}
 }
@@ -238,7 +255,36 @@ void JogScreen::Update( unsigned long time )
 		return;
 	}
 
-	if ((pState->m_Axis & (pState->m_Axis-1)) == 0)
+	if (button == BUTTON_Z)
+	{
+		pState->m_ZHoldTime = time;
+	}
+	if (button == BUTTON_STEP)
+	{
+		pState->m_StepHoldTime = time;
+	}
+
+	if (pState->m_Axis == 4)
+	{
+		bool bShowZUp = pState->m_ZHoldTime != 0 && time - pState->m_ZHoldTime > BUTTON_HOLD_TIME / 2;
+		if (bShowZUp && !pState->m_bShowZUp)
+		{
+			g_ButtonChangeTimers[BUTTON_Z] = 0;
+		}
+		pState->m_bShowZUp = bShowZUp;
+		if (bShowZUp)
+		{
+			g_ButtonDown |= 1 << BUTTON_Z; // hack - set the down state to draw the "hold" highlight persistently
+			if (TestBit(g_ButtonHold, BUTTON_Z))
+			{
+				Serial.print(g_StrPROBE2);
+				Serial.println(g_StrZPlus);
+				pState->m_bJoggingUp = true;
+			}
+		}
+	}
+
+	if ((pState->m_Axis & (pState->m_Axis-1)) == 0) // only one axis is selected
 	{
 		bool bShowAlign = pState->m_StepHoldTime != 0 && time - pState->m_StepHoldTime > BUTTON_HOLD_TIME / 2;
 		if (bShowAlign && !pState->m_bShowAlign)
@@ -246,12 +292,8 @@ void JogScreen::Update( unsigned long time )
 			g_ButtonChangeTimers[BUTTON_STEP] = 0;
 		}
 		pState->m_bShowAlign = bShowAlign;
-		// only one axis is selected
-		if (button == BUTTON_STEP)
-		{
-			pState->m_StepHoldTime = time;
-		}
-		if (pState->m_bShowAlign && TestBit(g_ButtonHold, BUTTON_STEP))
+
+		if (bShowAlign && TestBit(g_ButtonHold, BUTTON_STEP))
 		{
 			// Step button held down for full time, align to the step rate
 			Serial.print(g_StrJOG2);
@@ -266,7 +308,7 @@ void JogScreen::Update( unsigned long time )
 			}
 			Serial.println(g_TextBuf);
 		}
-		else if (!pState->m_bShowAlign && TestBit(g_ButtonUnclick, BUTTON_STEP))
+		else if (!bShowAlign && TestBit(g_ButtonUnclick, BUTTON_STEP))
 		{
 			m_StepIndex = (m_StepIndex + 1) % m_StepRateCount;
 		}
@@ -344,6 +386,15 @@ void JogScreen::Update( unsigned long time )
 		}
 	}
 
+	if (!TestBit(g_ButtonState, BUTTON_Z))
+	{
+		pState->m_ZHoldTime = 0;
+		pState->m_bShowZUp = false;
+		if (pState->m_bJoggingUp)
+		{
+			CancelJogUp();
+		}
+	}
 	if (!TestBit(g_ButtonState, BUTTON_STEP))
 	{
 		pState->m_StepHoldTime = 0;
@@ -356,13 +407,16 @@ void JogScreen::Activate( unsigned long time )
 	BaseScreen::Activate(time);
 	auto *pState = GetActiveState();
 	pState->m_LastInputTime = time;
+	pState->m_ZHoldTime = TestBit(g_ButtonState, BUTTON_Z) ? time : 0;
 	pState->m_StepHoldTime = 0;
 	pState->m_LastWheelTime = time;
 	pState->m_LastJoystickTime = time;
 	pState->m_bShowStop = false;
 	pState->m_bShowActions = true;
+	pState->m_bShowZUp = false;
 	pState->m_bShowAlign = false;
-	GetJoystick(&pState->m_OldJoyX, &pState->m_OldJoyY);
+	pState->m_bJoggingUp = false;
+	pState->m_OldJoyX = pState->m_OldJoyY = 0;
 	EncoderDrainValue();
 }
 
@@ -400,4 +454,16 @@ void JogScreen::GetJoystick( int8_t *px, int8_t *py )
 {
 	*px = QuantizeJoystick(g_JoyX, g_RomSettings.calibration);
 	*py = QuantizeJoystick(g_JoyY, g_RomSettings.calibration + 4);
+}
+
+void JogScreen::CancelJogUp( void )
+{
+	auto *pState = GetActiveState();
+
+	if (pState->m_bJoggingUp)
+	{
+		Serial.print(g_StrPROBE2);
+		Serial.println(g_StrZStop);
+		pState->m_bJoggingUp = false;
+	}
 }

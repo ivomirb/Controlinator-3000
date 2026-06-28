@@ -1,4 +1,4 @@
-#define PENDANT_VERSION "1.4" // must match Pendant.js
+#define PENDANT_VERSION "1.5" // must match Pendant.js
 #define PENDANT_BAUD_RATE 38400 // must match Pendant.js
 
 #include "Config.h"
@@ -151,9 +151,12 @@ const char *ProcessSerial( void )
 			{
 				g_SerialBuffer[g_SerialBufferLen] = 0;
 				g_SerialBufferLen = 0;
-				if (strcmp(g_SerialBuffer,"PEN") != 0 && strcmp(g_SerialBuffer,"BYE") != 0) // the initial handshake and BYE don't need ACK
+				if (Serial.available() == 0)
 				{
-					Serial.println(g_StrAck);
+					if (strcmp(g_SerialBuffer,"PEN") != 0 && strcmp(g_SerialBuffer,"BYE") != 0) // the initial handshake and BYE don't need ACK
+					{
+						Serial.println(g_StrAck);
+					}
 				}
 				return g_SerialBuffer;
 			}

@@ -13,11 +13,13 @@
 // DISABLE_WELCOME_SCREEN, DISABLE_MACRO_SCREEN, DISABLE_CALIBRATION_SCREEN - disable individual screens to save memory
 //         (for experiments that need more memory)
 
+// DISABLE_ZPROBE_NUDGE - disable zprobe nudge to save memory
 
 #if defined(__AVR_ATmega328P__) // Arduino Nano with ATmega328P
 
 #define U8G2_FULL_BUFFER 0
 #define PARTIAL_SCREEN_UPDATE 0
+#define DISABLE_ZPROBE_NUDGE // Save some memory
 #define USE_NEW_ENCODER 0 // You can set to 1 (for example to test a new wheel hardware), but it will disable some other features to save memory
 #define USE_WATCHDOG 1
 

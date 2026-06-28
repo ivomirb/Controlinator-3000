@@ -166,10 +166,12 @@ void BaseScreen::PrintCoord( char *buf, float val )
 {
 	if (g_bShowInches)
 	{
+		if (val < 0 && val > -0.0005) val = 0;
 		dtostrf(val / 25.4f, 8, 3, buf);
 	}
 	else
 	{
+		if (val < 0 && val > -0.005) val = 0;
 		dtostrf(val, 8, 2, buf);
 	}
 }

@@ -172,13 +172,16 @@ private:
 #endif
 
 		unsigned long m_LastInputTime; // time of last user input
+		unsigned long m_ZHoldTime; // duration of holding the Z button
 		unsigned long m_StepHoldTime; // duration of holding the Step button
 		unsigned long m_LastWheelTime; // time of the last sent wheel message
 		unsigned long m_LastJoystickTime; // time of last sent joystick message
 		uint8_t m_Axis : 4; // current axis - one bit for X, Y and Z
 		uint8_t m_bShowStop : 1; // show the stop button
 		uint8_t m_bShowActions : 1; // show the actions to do during idle
+		uint8_t m_bShowZUp : 1; // show Z Up instead of Z
 		uint8_t m_bShowAlign : 1; // show Align instead of Step
+		uint8_t m_bJoggingUp : 1;
 
 		// previous quantized joystick position
 		int8_t m_OldJoyX;
@@ -190,6 +193,7 @@ private:
 	friend union ScreenTimeshare;
 	ActiveState *GetActiveState( void );
 #endif
+	void CancelJogUp( void );
 
 	uint8_t m_StepIndex : 3; // current step rate index
 	uint8_t m_StepRateCount : 3;
@@ -209,6 +213,7 @@ private:
 	};
 
 	static void GetJoystick( int8_t *px, int8_t *py );
+	friend class ZProbeScreen;
 	friend union ScreenTimeshare;
 
 #if PARTIAL_SCREEN_UPDATE
@@ -221,6 +226,7 @@ private:
 		uint8_t axis : 4;
 		uint8_t bShowStop : 1;
 		uint8_t bShowActions : 1;
+		uint8_t bShowZUp : 1;
 		uint8_t bShowAlign : 1;
 		uint8_t stepIndex : 3;
 	};
@@ -440,13 +446,7 @@ public:
 	};
 
 	static const int ZPROBE_INACTIVITY_TIMER = 30000; // 30 seconds of inactivity will exit the jog screen
-
-	uint8_t m_bConfirmed : 1;
-	uint8_t m_bJoggingLocked : 1;
-	uint8_t m_bJoggingUp : 1;
-	uint8_t m_bJoggingDown : 1;
-	uint8_t m_ProbeMode : 2;
-	unsigned long m_LastInputTime;
+	static const int NUDGE_INACTIVITY_TIMER = 5000; // 5 seconds of inactivity will exit nudge mode
 
 #if PARTIAL_SCREEN_UPDATE
 	struct DrawState
@@ -455,9 +455,43 @@ public:
 		uint8_t bJoggingUp : 1;
 		uint8_t bJoggingDown : 1;
 		uint8_t bContact : 1;
+		uint8_t bNudging : 1;
 	};
 
 	static_assert(sizeof(DrawState) <= sizeof(DrawStateBase::custom), "draw state too big");
+#endif
+
+#if USE_SHARED_STATE
+	struct ActiveState
+	{
+#endif
+
+		uint8_t m_bConfirmed : 1;
+		uint8_t m_bJoggingLocked : 1;
+		uint8_t m_bJoggingUp : 1;
+		uint8_t m_bJoggingDown : 1;
+		uint8_t m_bNudging: 1;
+		uint8_t m_ProbeMode : 2;
+		unsigned long m_LastInputTime;
+
+#ifndef DISABLE_ZPROBE_NUDGE
+		unsigned long m_LastJoystickTime; // time of last sent joystick message
+
+		// previous quantized joystick position
+		int8_t m_OldJoyX;
+		int8_t m_OldJoyY;
+#endif
+
+#if USE_SHARED_STATE
+	};
+
+	void CancelJog( void );
+#ifndef DISABLE_ZPROBE_NUDGE
+	void CancelNudge( void );
+#endif
+
+	friend union ScreenTimeshare;
+	ActiveState *GetActiveState( void );
 #endif
 };
 
@@ -468,6 +502,7 @@ union ScreenTimeshare
 {
 	DialogScreen::ActiveState dialog;
 	JogScreen::ActiveState jog;
+	ZProbeScreen::ActiveState zprobe;
 };
 
 ScreenTimeshare g_ScreenTimeshare;
