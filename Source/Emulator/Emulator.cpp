@@ -347,13 +347,18 @@ void OnPaint( HDC hdc )
 
 void UpdateState( int dt )
 {
-	if (g_MouseCapture == 0)
-	{
-		g_PhysicalButtons = 0;
-	}
-	else if (g_MouseCapture != BUTTON_JOYSTICK + 1)
+	g_PhysicalButtons = 0;
+	if (g_MouseCapture != BUTTON_JOYSTICK + 1)
 	{
 		g_PhysicalButtons = 1 << (g_MouseCapture - 1);
+	}
+
+	for (int i = 0; i < 8; i++)
+	{
+		if (GetKeyState('1' + i) < 0)
+		{
+			g_PhysicalButtons |= 1 << i;
+		}
 	}
 
 	if (g_MouseCapture != BUTTON_JOYSTICK + 1)
