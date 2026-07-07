@@ -524,7 +524,8 @@ function SafeStop(force)
 // Stops the current operation as gently as possible
 function SmartStop()
 {
-	if (laststatus.comms.runStatus == "Jog")
+	if (laststatus.comms.runStatus == "Jog" ||
+		(laststatus.comms.runStatus == "Running" && (g_JogXYLocation != undefined || g_JogWQueue != undefined || g_ProbeJog != undefined)))
 	{
 		socket.emit('stop', {stop: false, jog: true, abort: false});
 	}
@@ -806,6 +807,24 @@ function UpdateJogXY()
 	}
 }
 
+// Clears the jog XY state
+function ClearJogXY(abort)
+{
+	if (abort)
+	{
+		g_JogXYState = undefined;
+	}
+	else if (g_JogXYState == true)
+	{
+		g_JogXYState = false;
+	}
+	if (g_JogXYTimer != undefined)
+	{
+		clearInterval(g_JogXYTimer);
+		g_JogXYTimer = undefined;
+	}
+}
+
 // Handles the jog commands from the pendant
 function HandleJogCommand(command)
 {
@@ -987,15 +1006,7 @@ function HandleJogCommand(command)
 		if (xy[0] == 0 && xy[1] == 0)
 		{
 			// joystick is released, stop immediately
-			if (g_JogXYState == true)
-			{
-				g_JogXYState = false;
-			}
-			if (g_JogXYTimer != undefined)
-			{
-				clearInterval(g_JogXYTimer);
-				g_JogXYTimer = undefined;
-			}
+			ClearJogXY(false);
 			return;
 		}
 
@@ -1669,12 +1680,14 @@ function PendantComHandler(data)
 	if (data == "STOP")
 	{
 		SmartStop();
+		ClearJogXY(true);
 		return;
 	}
 
 	if (data == "ABORT")
 	{
 		socket.emit('stop', {stop: false, jog: false, abort: true});
+		ClearJogXY(true);
 		return;
 	}
 
