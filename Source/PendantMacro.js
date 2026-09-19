@@ -2793,17 +2793,27 @@ window.SelectSettingsTab = function(index)
 
 function GetDefaultSafeLimits(axis)
 {
-	var param;
+	var size;
+	var mask;
 	switch (axis)
 	{
-		case "X": param = grblParams["$130"]; break;
-		case "Y": param = grblParams["$131"]; break;
-		case "Z": param = grblParams["$132"]; break;
+		case "X": size = parseFloat(grblParams["$130"]); mask = 1; break;
+		case "Y": size = parseFloat(grblParams["$131"]); mask = 2; break;
+		case "Z": size = parseFloat(grblParams["$132"]); mask = 4; break;
 	}
 
-	if (laststatus.comms.connectionStatus != 0 && param != undefined)
+	if (laststatus.comms.connectionStatus != 0 && size != undefined)
 	{
-		return {min: 3 - param, max: -3};
+		var homeNegative = (parseInt(grblParams["$23"]) & mask) != 0; // axis homes in the negative direction
+		if (laststatus.machine.firmware.features.contains('Z'))
+		{
+			return homeNegative ? {min: 0, max: size} : {min: -size, max: 0};
+		}
+		else
+		{
+			var pullOff = parseFloat(grblParams["$27"]);
+			return homeNegative ? {min: pullOff - size, max: 0} : {min: -size, max: -pullOff};
+		}
 	}
 	return {min: 0, max: 0};
 }

@@ -20,6 +20,9 @@
 #include <math.h>
 #include <stdio.h>
 #include <commctrl.h>
+#include <objbase.h>
+#include <XInput.h>
+#pragma comment(lib,"xinput.lib")
 
 #pragma warning(disable: 4244)
 
@@ -29,6 +32,8 @@
 HINSTANCE hInst;                                // current instance
 char szTitle[MAX_LOADSTRING];                  // The title bar text
 char szWindowClass[MAX_LOADSTRING];            // the main window class name
+bool g_bAppActive = false;
+bool g_bGamepad = false;
 HWND g_ConsoleDlg;
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -213,6 +218,10 @@ int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 	LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
 	LoadString(hInstance, IDC_PENDANTEMULATOR, szWindowClass, MAX_LOADSTRING);
 
+	HRESULT hr;
+	if( FAILED( hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED) ) )
+		return 1;
+
 	WNDCLASSEX wcex = {sizeof(WNDCLASSEX)};
 	wcex.style          = CS_HREDRAW | CS_VREDRAW;
 	wcex.lpfnWndProc    = WndProc;
@@ -353,15 +362,30 @@ void UpdateState( int dt )
 		g_PhysicalButtons = 1 << (g_MouseCapture - 1);
 	}
 
-	for (int i = 0; i < 8; i++)
+	if (g_bAppActive)
 	{
-		if (GetKeyState('1' + i) < 0)
+		for (int i = 0; i < 8; i++)
 		{
-			g_PhysicalButtons |= 1 << i;
+			if (GetKeyState('1' + i) < 0)
+			{
+				g_PhysicalButtons |= 1 << i;
+			}
 		}
 	}
 
-	if (g_MouseCapture != BUTTON_JOYSTICK + 1)
+	if (g_bGamepad)
+	{
+		XINPUT_STATE state;
+		HRESULT dwResult = XInputGetState(0, &state);
+		if (dwResult == ERROR_SUCCESS)
+		{
+			int x = state.Gamepad.sThumbLX;
+			int y = state.Gamepad.sThumbLY;
+			g_JoyX = (x+32767)/64;
+			g_JoyY = (y+32767)/64;
+		}
+	}
+	else if (g_MouseCapture != BUTTON_JOYSTICK + 1)
 	{
 		// auto-center stick
 		if (g_JoyX != g_JoyCenterX || g_JoyY != g_JoyCenterY)
@@ -470,7 +494,7 @@ void OnLButtonDown( HWND hWnd, int mx, int my )
 		return;
 	}
 
-	if (mx >= JOYPAD_X && mx < JOYPAD_X + JOYPAD_SIZE && my >= JOYPAD_Y && my < JOYPAD_Y + JOYPAD_SIZE)
+	if (!g_bGamepad && mx >= JOYPAD_X && mx < JOYPAD_X + JOYPAD_SIZE && my >= JOYPAD_Y && my < JOYPAD_Y + JOYPAD_SIZE)
 	{
 		g_MouseCapture = BUTTON_JOYSTICK + 1;
 		SetCapture(hWnd);
@@ -484,6 +508,10 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 {
 	switch (message)
 	{
+	case WM_ACTIVATEAPP:
+		g_bAppActive = wParam == TRUE;
+		break;
+
 	case WM_COMMAND:
 		{
 			int wmId = LOWORD(wParam);
@@ -492,6 +520,10 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 			{
 			case IDM_EXIT:
 				DestroyWindow(hWnd);
+				break;
+			case ID_FILE_GAMEPAD:
+				g_bGamepad = !g_bGamepad;
+				CheckMenuItem(GetMenu(hWnd), ID_FILE_GAMEPAD, MF_BYCOMMAND | (g_bGamepad ? MF_CHECKED : MF_UNCHECKED));
 				break;
 			default:
 				return DefWindowProc(hWnd, message, wParam, lParam);
@@ -535,7 +567,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 		break;
 
 	case WM_MOUSEMOVE:
-		if (g_MouseCapture == BUTTON_JOYSTICK + 1)
+		if (!g_bGamepad && g_MouseCapture == BUTTON_JOYSTICK + 1)
 		{
 			int mx = (short)LOWORD(lParam);
 			int my = (short)HIWORD(lParam);

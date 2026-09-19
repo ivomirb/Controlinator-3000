@@ -241,6 +241,10 @@ void ZProbeScreen::Update( unsigned long time )
 	else if (g_bCanShowStop && button == BUTTON_STOP)
 	{
 		Serial.println(g_StrSTOP);
+#ifndef DISABLE_ZPROBE_NUDGE
+		auto *pState = GetActiveState();
+		pState->m_bNudging = false;
+#endif
 	}
 
 #ifndef DISABLE_ZPROBE_NUDGE
