@@ -81,6 +81,7 @@ const g_StatusMap =
 	"Running": 6,
 	"Resuming": 7,
 	"Door:3": 8,
+	"Door:4": 8, // for some reason Door:3 was changed to Door:4 in grblHAL, and Door:3 is unused
 
 	"Idle": 9,
 	"Hold:0": 10,
@@ -1354,13 +1355,7 @@ function HandleProbeCommand(command)
 			var gcode = "G38.3 G21 G91 Z-" + settings.seek1.travel.toFixed(3) + " F" + feed.toFixed(0);
 			g_LastProbeZ = undefined;
 			socket.off('prbResult');
-
-			socket.emit('runJob', {
-				data: gcode,
-				isJob: false,
-				completedMsg: "",
-				fileName: ""
-			});
+			sendGcode(gcode);
 
 			var pass = 1;
 			socket.on('prbResult', function(probe)
@@ -1399,7 +1394,7 @@ function HandleProbeCommand(command)
 					}
 					else if (travel > 0)
 					{
-						gcode += "\n$J=G21 G91 Z" + travel.toFixed(3) + " F" + feed.toFixed(0);
+						gcode += "\nG1 G21 G91 Z" + travel.toFixed(3) + " F" + feed.toFixed(0); // can't use $J here because no G commands are allowed during jogging
 					}
 
 					if (settings.style == "dual")
@@ -1407,12 +1402,7 @@ function HandleProbeCommand(command)
 						// seek 2
 						feed = Math.max(Math.min(settings.seek2.feed, grblParams["$112"]), 10);
 						gcode += "\nG38.3 G21 G91 Z-" + settings.seek2.travel.toFixed(3) + " F" + feed.toFixed(0);
-						socket.emit('runJob', {
-							data: gcode,
-							isJob: false,
-							completedMsg: "",
-							fileName: ""
-						});
+						sendGcode(gcode);
 					}
 					else
 					{
@@ -1702,6 +1692,9 @@ function PendantComHandler(data)
 		if (COM_LOG_LEVEL >= 1) { console.log("#SET0#"); }
 		if (data.length >= 6 && data[5] >= 'X' && data[5] <= 'Z')
 		{
+			if (typeof captureWcsHistory == "function") {
+				captureWcsHistory('Before <b>Pendant Set Zero</b>');
+			}
 			sendGcode("G10 P0 L20 " + data[5] + "0");
 		}
 		return;
@@ -2017,12 +2010,12 @@ window.ConnectPendant = function()
 {
 	if (!g_PendantPort)
 	{
-		var version = laststatus.driver.version.split('.')[2];
+/*		var version = laststatus.driver.version.split('.')[2];
 		if (version == undefined || version < 371)
 		{
 			printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>The pendant requires OpenBuilds v1.0.371 or later</span>")
 			return;
-		}
+		}*/
 		$('#ConnectPendant').addClass("disabled");
 		$('#DisconnectPendant').addClass("disabled");
 		printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Looking for pendant...</span>")
@@ -2195,8 +2188,8 @@ function StopJoystick()
 // Begins the calibration process
 window.StartCalibration = function()
 {
-	ShowElement($('#PendantCalibrate'), false);
-	ShowElement($('#PendantCalibrateCancel'), true);
+	$('#PendantCalibrate').hide();
+	$('#PendantCalibrateCancel').show();
 	WritePort("CAL:STARTC");
 	g_JoyCalX = [1024, -1, 1024, -1];
 	g_JoyCalY = [1024, -1, 1024, -1];
@@ -2208,8 +2201,8 @@ window.CancelCalibration = function(external)
 {
 	if (g_CalibrationStage != undefined)
 	{
-		ShowElement($('#PendantCalibrate'), true);
-		ShowElement($('#PendantCalibrateCancel'), false);
+		$('#PendantCalibrate').show();
+		$('#PendantCalibrateCancel').hide();
 		document.getElementById("PendantCalText").innerHTML = "";
 		g_CalibrationStage = undefined;
 		if (!external)
@@ -2240,8 +2233,8 @@ function SetCalibrationStage(stage)
 	else
 	{
 		WritePort("CAL:STOPC");
-		ShowElement($('#PendantCalibrate'), true);
-		ShowElement($('#PendantCalibrateCancel'), false);
+		$('#PendantCalibrate').show();
+		$('#PendantCalibrateCancel').hide();
 		document.getElementById("PendantCalText").innerHTML = "<b>Done!</b>";
 		g_CalibrationStage = undefined;
 
@@ -2727,19 +2720,6 @@ The calibration process uses a conservative estimate. If your joystick is more a
   </div>
 </div>`
 
-// Shows or hides a dialog element
-function ShowElement(el, show)
-{
-	if (show)
-	{
-		el.show();
-	}
-	else
-	{
-		el.hide();
-	}
-}
-
 // Selects a tab in the settings. Shows/hides the necessary elements
 window.SelectSettingsTab = function(index)
 {
@@ -2756,30 +2736,30 @@ window.SelectSettingsTab = function(index)
 	var tab3 = (index == 2);
 	var tab4 = (index == 3);
 	var tab5 = (index == 4);
-	ShowElement($('#PendantTab11,#PendantTab12,#PendantTab13,#PendantTab16,#PendantTab17,#PendantTab18,#PendantTab19,#PendantTab110,#PendantTab111'), tab1);
+	$('#PendantTab11,#PendantTab12,#PendantTab13,#PendantTab16,#PendantTab17,#PendantTab18,#PendantTab19,#PendantTab110,#PendantTab111').toggle(tab1);
 
 	var safeLimitsDisabled = !$('#PendantSafeLimits').prop('checked');
 	$('#PendantResetSafeLimits,#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled);
 
 	var displayUnits = $('#PendantDisplayUnits').val();
-	ShowElement($('#PendantTab14'), tab1 && displayUnits != "inches");
-	ShowElement($('#PendantTab15'), tab1 && displayUnits == "inches");
+	$('#PendantTab14').toggle(tab1 && displayUnits != "inches");
+	$('#PendantTab15').toggle(tab1 && displayUnits == "inches");
 
 	var zStyle = $('#PendantZStyle').val();
-	ShowElement($('#PendantTab21,#PendantTab22,#PendantTab23'), tab2);
-	ShowElement($('#PendantTab24,#PendantTab25,#PendantTab27,#PendantTab28'), tab2 && zStyle != "default");
-	ShowElement($('#PendantTab26,#PendantTab29,#PendantTab210,#PendantTab211'), tab2 && zStyle == "dual");
+	$('#PendantTab21,#PendantTab22,#PendantTab23').toggle(tab2);
+	$('#PendantTab24,#PendantTab25,#PendantTab27,#PendantTab28').toggle(tab2 && zStyle != "default");
+	$('#PendantTab26,#PendantTab29,#PendantTab210,#PendantTab211').toggle(tab2 && zStyle == "dual");
 
-	ShowElement($('#PendantTab31'), tab3);
+	$('#PendantTab31').toggle(tab3);
 
 	var toolStyle = $('#PendantToolStyle').val();
-	ShowElement($('#PendantTab32,#PendantTab33,#PendantTab34,#PendantTab36,#PendantTab37'), tab3 && toolStyle != "disable");
-	ShowElement($('#PendantTab35,#PendantTab38,#PendantTab39,#PendantTab40'), tab3 && toolStyle == "dual");
+	$('#PendantTab32,#PendantTab33,#PendantTab34,#PendantTab36,#PendantTab37').toggle(tab3 && toolStyle != "disable");
+	$('#PendantTab35,#PendantTab38,#PendantTab39,#PendantTab40').toggle(tab3 && toolStyle == "dual");
 
-	ShowElement($('#PendantTab41,#PendantTab42,#PendantTab43,#PendantTab44,#PendantTab45,#PendantTab46,#PendantTab47,#PendantTab48'), tab4);
+	$('#PendantTab41,#PendantTab42,#PendantTab43,#PendantTab44,#PendantTab45,#PendantTab46,#PendantTab47,#PendantTab48').toggle(tab4);
 
-	ShowElement($('#PendantTab51,#PendantTab52,#PendantCalibrate,#PendantTab53'), tab5);
-	ShowElement($('#PendantCalibrateCancel'), false);
+	$('#PendantTab51,#PendantTab52,#PendantCalibrate,#PendantTab53').toggle(tab5);
+	$('#PendantCalibrateCancel').hide();
 
 	if (tab5)
 	{

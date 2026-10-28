@@ -264,7 +264,7 @@ void RunScreen::Update( unsigned long time )
 				}
 			}
 			break;
-		case STATE_PAUSED_READY: // job is ready to resome
+		case STATE_PAUSED_READY: // job is ready to resume
 			{
 				if (TestBit(g_ButtonHold, BUTTON_RESUME))
 				{
