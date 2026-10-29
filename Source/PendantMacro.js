@@ -22,8 +22,9 @@ const WHEEL_JOG_AHEAD_TIME = 600; // up to 600ms of jog time submitted to Grbl
 
 // This value controls how long after you stop turning the wheel the jog will stop. Smaller number will make the stop
 // more responsive and prevent long runaway jog movements. It comes at the expense of lost clicks of the wheel.
-// To avoid losing any clicks (the machine will move the exact number of clicks), use a very large number like 100000
-const WHEEL_JOG_STOP_TIME = 100; // the jog will stop 100ms after the last click
+// To avoid losing any clicks (the machine will move the exact number of clicks), use a very large number like 100000.
+// This value should be larger than 200ms, since the jog is updated on each status which are 200ms apart
+const WHEEL_JOG_STOP_TIME = 500; // 500ms seems like a good value
 
 // These must match Main.h
 const PENDANT_VERSION = "1.5";
@@ -40,6 +41,8 @@ const {
 const {
 	ReadlineParser
 } = require('@serialport/parser-readline');
+
+const GROOVE_CONTROL_VERSION = ((typeof APP_NAME == "string") && APP_NAME == "Groove Control") ? APP_VERSION : 0;
 
 var g_PendantPort;
 
@@ -107,6 +110,7 @@ function GetDefaultSettings()
 		pauseSpindle: false,
 		jobChecklist: "Remove Probe|Turn On Spindle",
 		safeLimitsEnabled: true,
+		useSystemLimits: true,
 		safeLimitsX: {min: 0, max: 0},
 		safeLimitsY: {min: 0, max: 0},
 		safeLimitsZ: {min: 0, max: 0},
@@ -310,7 +314,7 @@ function IsStableIdle()
 	return false;
 }
 
-// Handles the "ok" event from the Control software
+// Handles the "ok" event from the OpenBuilds-CONTROL software
 function HandleOk(command)
 {
 	if (typeof(command) == 'string' && g_JogXYState != undefined && command.startsWith("$J="))
@@ -608,6 +612,11 @@ var g_JogJoystick = {X: 0, Y: 0}; // last received joystick position
 var g_JogCancelPendingTime = undefined; // to cancel jog on next job complete
 var g_JogXYState = undefined; // true - running, false - stopping, undefined - inactive
 var g_JogXYTime;
+
+// New jog
+var g_JogXYSettings = false;
+var g_JogXYRepeater = undefined;
+var g_JogJoystickTime = undefined;
 
 // Temporary replacement for the default 'toastError' listener, which ignores Error 8 during jogging.
 function HandleJogWError(data)
@@ -923,6 +932,7 @@ function HandleJogCommand(command)
 			case "Y": feedT = grblParams["$111"]; break;
 			case "Z": feedT = grblParams["$112"]; break;
 		}
+		feedT /= bInches ? 25.4 : 1;
 
 		// absolute move, work or machine, inches or mm
 		var gcode = "$J=G90 " + (work ? "" : "G53 ") + (bInches ? "G20 " : "G21 ") + axis + roundedValue.toFixed(3) + " F" + feedT;
@@ -947,6 +957,32 @@ function HandleJogCommand(command)
 		{
 			count = -count;
 			step = -step;
+		}
+
+		if (GROOVE_CONTROL_VERSION >= 1001)
+		{
+			var speed;
+			switch (axis)
+			{
+				case "X": speed = grblParams["$110"]; break;
+				case "Y": speed = grblParams["$111"]; break;
+				case "Z": speed = grblParams["$112"]; break;
+			}
+			speed *= (inches ? 1/25.4 : 1);
+			const limits = GetSafeLimits(axis);
+			const params = {
+				axis: axis.toLowerCase(),
+				min: limits.min * (inches ? 1/25.4 : 1),
+				max: limits.max * (inches ? 1/25.4 : 1),
+				enableLimits: g_PendantSettings.safeLimitsEnabled,
+				units: inches ? "in" : "mm",
+				count: count,
+				step: step,
+				speed: Math.min(speed, Math.abs(step) * 6000), // limit the speed to 100 steps per second (6000 steps per minute)
+				timeout: WHEEL_JOG_STOP_TIME,
+			};
+			socket.emit('mpgJog', params);
+			return;
 		}
 
 		if (axis != g_JogAxis || inches != g_bJogInches)
@@ -996,7 +1032,49 @@ function HandleJogCommand(command)
 	if (command.startsWith("JXY") || command.startsWith("NXY"))
 	{
 		// joystick input
-		var xy = command.substring(3).split(',');
+		var xy = command.substring(3).split(',').map((x) => parseFloat(x));
+		if (GROOVE_CONTROL_VERSION >= 1001)
+		{
+			if (xy[0] != 0 || xy[1] != 0)
+			{
+				if (!g_JogXYSettings)
+				{
+					const limitsX = GetSafeLimits('X');
+					const limitsY = GetSafeLimits('Y');
+					g_JogXYSettings = {
+						minX: limitsX.min, minY: limitsY.min, minZ: 0,
+						maxX: limitsX.max, maxY: limitsY.max, maxZ: 0,
+						enableLimits: g_PendantSettings.safeLimitsEnabled,
+						speedXY: Math.min(parseFloat(grblParams.$110), parseFloat(grblParams.$111)),
+						speedZ: 0
+					};
+					g_JogXYRepeater = setInterval(function() {
+						let time = new Date().getTime();
+						if (time > g_JogJoystickTime + 100)
+						{
+							g_JogJoystickTime = time;
+							socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
+						}
+					}, 100);
+				}
+				const scale = command.startsWith("NXY") ? (g_PendantSettings.zProbe.nudgeSpeed / (100 * JOYSTICK_STEPS)) : (1 / JOYSTICK_STEPS);
+				g_JogJoystick = {X: xy[0] * scale, Y: xy[1] * scale};
+				g_JogJoystickTime = new Date().getTime();
+				socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
+			}
+			else if (g_JogXYSettings)
+			{
+				g_JogXYSettings = false;
+				if (g_JogXYRepeater)
+				{
+					clearInterval(g_JogXYRepeater);
+					g_JogXYRepeater = undefined;
+				}
+				socket.emit('analogJog', {stop: true});
+			}
+			return;
+		}
+
 		g_JogJoystick = {X: xy[0], Y: xy[1]};
 		if (command.startsWith("NXY"))
 		{
@@ -1062,7 +1140,7 @@ function HandleJobMenuPart2()
 {
 	if (g_PendantSettings.jobChecklist && g_PendantSettings.jobChecklist.length > 0)
 	{
-		var text = g_PendantSettings.jobChecklist.split('|').map(x => CHAR_UNCHECKED + " " + x.substring(0, 16)).slice(0, 3);
+		var text = g_PendantSettings.jobChecklist.split('|').map((x) => CHAR_UNCHECKED + " " + x.substring(0, 16)).slice(0, 3);
 		ShowPendantDialog({
 			title: "Job Checklist",
 			text: text,
@@ -1589,7 +1667,7 @@ function PendantComHandler(data)
 	if (data.startsWith("CALIBRATION:"))
 	{
 		if (COM_LOG_LEVEL >= 1) { console.log("#CALIBRATION#"); }
-		var cal = data.substring(12).split(',').map(Number);
+		var cal = data.substring(12).split(',').map((x) => Number(x));
 
 		g_PendantRomSettings.calibrationX[0] = cal[0];
 		g_PendantRomSettings.calibrationX[2] = cal[1];
@@ -1624,7 +1702,7 @@ function PendantComHandler(data)
 	if (data.startsWith("DIALOG:"))
 	{
 		if (COM_LOG_LEVEL >= 1) { console.log("#DIALOG#"); }
-		var dlg = data.substring(7).split(',').map(Number);
+		var dlg = data.substring(7).split(',').map((x) => Number(x));
 		if (dlg[0] == g_DialogId)
 		{
 			g_DialogId = 0;
@@ -1643,7 +1721,7 @@ function PendantComHandler(data)
 	// joystick position for calibration
 	if (data.startsWith("RAWJOY:"))
 	{
-		var xy = data.substring(7).split(',').map(Number);
+		var xy = data.substring(7).split(',').map((x) => Number(x));
 		g_RawJoyX = xy[0];
 		g_RawJoyY = xy[1];
 		UpdateCalibration();
@@ -1692,7 +1770,8 @@ function PendantComHandler(data)
 		if (COM_LOG_LEVEL >= 1) { console.log("#SET0#"); }
 		if (data.length >= 6 && data[5] >= 'X' && data[5] <= 'Z')
 		{
-			if (typeof captureWcsHistory == "function") {
+			if (GROOVE_CONTROL_VERSION >= 1000)
+			{
 				captureWcsHistory('Before <b>Pendant Set Zero</b>');
 			}
 			sendGcode("G10 P0 L20 " + data[5] + "0");
@@ -1925,7 +2004,10 @@ function TryComHandler(data)
 			socket.on('status', HandleStatus);
 			socket.on('queueCount', HandleQueueStatus);
 			socket._callbacks["$jobComplete"].splice(0,0, HandleJobComplete); // hack to inject our callback first to stop OpenBuilds from showing the job completed popup
-			socket.on('ok', HandleOk);
+			if (GROOVE_CONTROL_VERSION < 1001)
+			{
+				socket.on('ok', HandleOk);
+			}
 
 			g_CurrentTryPort = undefined;
 			g_CurrentTryParser = undefined;
@@ -2021,7 +2103,7 @@ window.ConnectPendant = function()
 		printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Looking for pendant...</span>")
 		SerialPort.list().then(function(ports)
 			{
-				g_ComPorts = ports.map(x => x.path);
+				g_ComPorts = ports.map((x) => x.path);
 				var lastPort = localStorage.getItem("PendantPort");
 				if (lastPort)
 				{
@@ -2346,6 +2428,9 @@ The names are separated by |. Each name is up to 16 characters">Job Checklist</l
 <div id="PendantTab18" class="row mb-2 pt-1 border-top bd-gray">
   <div class="cell-sm-4">
     <input id="PendantSafeLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Enable Safe Jogging Area" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
+  </div>
+  <div class="cell-sm-4">
+    <input id="PendantSystemLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Use System Limits" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
   </div>
 </div>
 
@@ -2739,7 +2824,9 @@ window.SelectSettingsTab = function(index)
 	$('#PendantTab11,#PendantTab12,#PendantTab13,#PendantTab16,#PendantTab17,#PendantTab18,#PendantTab19,#PendantTab110,#PendantTab111').toggle(tab1);
 
 	var safeLimitsDisabled = !$('#PendantSafeLimits').prop('checked');
-	$('#PendantResetSafeLimits,#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled);
+	var useSystemLimits = GROOVE_CONTROL_VERSION > 0 && $('#PendantSystemLimits').prop('checked');
+	$('#PendantSystemLimits').prop('disabled', safeLimitsDisabled);
+	$('#PendantResetSafeLimits,#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled || useSystemLimits);
 
 	var displayUnits = $('#PendantDisplayUnits').val();
 	$('#PendantTab14').toggle(tab1 && displayUnits != "inches");
@@ -2806,6 +2893,11 @@ function GetSettingsSafeLimits(settings, axis)
 
 function GetSafeLimits(axis)
 {
+	if (GROOVE_CONTROL_VERSION > 0 && g_PendantSettings.useSystemLimits)
+	{
+		const limits = computeMachineLimits(1);
+		return {min: limits["min" + axis], max: limits["max" + axis]};
+	}
 	return GetSettingsSafeLimits(g_PendantSettings, axis);
 }
 
@@ -2832,10 +2924,11 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.autoConnect = $('#PendantAutoConnect').prop('checked');
 	g_PendantSettings.displayUnits = $('#PendantDisplayUnits').val();
 
-	g_PendantSettings.wheelStepsMm = $('#PendantWheelStepsMm').val().split(',').map(Number);
-	g_PendantSettings.wheelStepsIn = $('#PendantWheelStepsIn').val().split(',').map(Number);
+	g_PendantSettings.wheelStepsMm = $('#PendantWheelStepsMm').val().split(',').map((x) => Number(x));
+	g_PendantSettings.wheelStepsIn = $('#PendantWheelStepsIn').val().split(',').map((x) => Number(x));
 
 	g_PendantSettings.safeLimitsEnabled = $('#PendantSafeLimits').prop('checked');
+	g_PendantSettings.useSystemLimits = $('#PendantSystemLimits').prop('checked');
 	g_PendantSettings.safeLimitsX = {min: Number($('#PendantMinX').val()), max: Number($('#PendantMaxX').val())};
 	g_PendantSettings.safeLimitsY = {min: Number($('#PendantMinY').val()), max: Number($('#PendantMaxY').val())};
 	g_PendantSettings.safeLimitsZ = {min: Number($('#PendantMinZ').val()), max: Number($('#PendantMaxZ').val())};
@@ -2908,6 +3001,8 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantWheelStepsIn').val(steps);
 
 	$('#PendantSafeLimits').prop('checked', settings.safeLimitsEnabled);
+	$('#PendantSystemLimits').prop('checked', settings.useSystemLimits);
+	$('#PendantSystemLimits').parent().toggle(GROOVE_CONTROL_VERSION > 0);
 
 	var limits = GetSettingsSafeLimits(settings, 'X');
 	$('#PendantMinX').val(limits.min);

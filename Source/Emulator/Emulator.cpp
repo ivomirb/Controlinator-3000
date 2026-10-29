@@ -63,7 +63,9 @@ const POINT g_ButtonPos[8] =
 
 const int WHEEL_SIZE = 40;
 const int WHEEL_X1 = SCREEN_X + 64*BMP_SCALE - BUTTON_PADDING_X/2 - WHEEL_SIZE;
+const int WHEEL_X11 = WHEEL_X1 - BUTTON_PADDING_X/2 - WHEEL_SIZE;
 const int WHEEL_X2 = WHEEL_X1 + WHEEL_SIZE + BUTTON_PADDING_X;
+const int WHEEL_X22 = WHEEL_X2 + BUTTON_PADDING_X/2 + WHEEL_SIZE;
 const int WHEEL_Y = SCREEN_Y + 64*BMP_SCALE + 50;
 
 const int JOYPAD_SIZE = 200;
@@ -102,9 +104,11 @@ void InitializeInput( void )
 {
 }
 
-#define BUTTON_COUNT 12
-#define BUTTON_WHEEL_L 10
-#define BUTTON_WHEEL_R 11
+#define BUTTON_COUNT 14
+#define BUTTON_WHEEL_L1 10
+#define BUTTON_WHEEL_L2 11
+#define BUTTON_WHEEL_R1 12
+#define BUTTON_WHEEL_R2 13
 uint16_t g_PhysicalButtons;
 
 #define Sprintf sprintf_s
@@ -290,6 +294,20 @@ int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 	return (int) msg.wParam;
 }
 
+void DrawLeftArrow( HDC hdc, int x, int y )
+{
+	MoveToEx(hdc, x, y - 6, NULL);
+	LineTo(hdc, x - 6, y);
+	LineTo(hdc, x, y + 6);
+}
+
+void DrawRightArrow( HDC hdc, int x, int y )
+{
+	MoveToEx(hdc, x, y - 6, NULL);
+	LineTo(hdc, x + 6, y);
+	LineTo(hdc, x, y + 6);
+}
+
 void OnPaint( HDC hdc )
 {
 	// draw screen
@@ -318,20 +336,23 @@ void OnPaint( HDC hdc )
 	Ellipse(hdc, ABORT_BUTTON_X, ABORT_BUTTON_Y, ABORT_BUTTON_X + ABORT_BUTTON_SIZE, ABORT_BUTTON_Y + ABORT_BUTTON_SIZE);
 
 	// draw wheel arrows
-	SelectObject(hdc, TestBit(g_ButtonState, BUTTON_WHEEL_L) ? g_ButtonBrushUp : g_ButtonBrushDown);
+	SelectObject(hdc, TestBit(g_ButtonState, BUTTON_WHEEL_L1) ? g_ButtonBrushUp : g_ButtonBrushDown);
 	Rectangle(hdc, WHEEL_X1, WHEEL_Y, WHEEL_X1 + WHEEL_SIZE, WHEEL_Y + WHEEL_SIZE);
-	SelectObject(hdc, TestBit(g_ButtonState, BUTTON_WHEEL_R) ? g_ButtonBrushUp : g_ButtonBrushDown);
+	SelectObject(hdc, TestBit(g_ButtonState, BUTTON_WHEEL_L2) ? g_ButtonBrushUp : g_ButtonBrushDown);
+	Rectangle(hdc, WHEEL_X11, WHEEL_Y, WHEEL_X11 + WHEEL_SIZE, WHEEL_Y + WHEEL_SIZE);
+	SelectObject(hdc, TestBit(g_ButtonState, BUTTON_WHEEL_R1) ? g_ButtonBrushUp : g_ButtonBrushDown);
 	Rectangle(hdc, WHEEL_X2, WHEEL_Y, WHEEL_X2 + WHEEL_SIZE, WHEEL_Y + WHEEL_SIZE);
+	SelectObject(hdc, TestBit(g_ButtonState, BUTTON_WHEEL_R2) ? g_ButtonBrushUp : g_ButtonBrushDown);
+	Rectangle(hdc, WHEEL_X22, WHEEL_Y, WHEEL_X22 + WHEEL_SIZE, WHEEL_Y + WHEEL_SIZE);
+
 	{
-		int x = WHEEL_X1 + WHEEL_SIZE/2 + 2;
 		int y = WHEEL_Y + WHEEL_SIZE/2;
-		MoveToEx(hdc, x, y - 6, NULL);
-		LineTo(hdc, x - 6, y);
-		LineTo(hdc, x, y + 6);
-		x = WHEEL_X2 + WHEEL_SIZE/2 - 3;
-		MoveToEx(hdc, x, y - 6, NULL);
-		LineTo(hdc, x + 6, y);
-		LineTo(hdc, x, y + 6);
+		DrawLeftArrow(hdc, WHEEL_X11 + WHEEL_SIZE/2 - 4, y);
+		DrawLeftArrow(hdc, WHEEL_X11 + WHEEL_SIZE/2 + 6, y);
+		DrawLeftArrow(hdc, WHEEL_X1 + WHEEL_SIZE/2 + 2, y);
+		DrawRightArrow(hdc, WHEEL_X2 + WHEEL_SIZE/2 - 3, y);
+		DrawRightArrow(hdc, WHEEL_X22 + WHEEL_SIZE/2 - 9, y);
+		DrawRightArrow(hdc, WHEEL_X22 + WHEEL_SIZE/2 + 1, y);
 	}
 
 	// draw joypad
@@ -479,16 +500,28 @@ void OnLButtonDown( HWND hWnd, int mx, int my )
 
 	if (my >= WHEEL_Y && my < WHEEL_Y + WHEEL_SIZE)
 	{
+		if (mx >= WHEEL_X11 && mx < WHEEL_X11 + WHEEL_SIZE)
+		{
+			g_MouseCapture = BUTTON_WHEEL_L2 + 1;
+			EncoderAddValue(-20);
+			SetCapture(hWnd);
+		}
 		if (mx >= WHEEL_X1 && mx < WHEEL_X1 + WHEEL_SIZE)
 		{
-			g_MouseCapture = BUTTON_WHEEL_L + 1;
+			g_MouseCapture = BUTTON_WHEEL_L1 + 1;
 			EncoderAddValue(-1);
 			SetCapture(hWnd);
 		}
 		else if (mx >= WHEEL_X2 && mx < WHEEL_X2 + WHEEL_SIZE)
 		{
-			g_MouseCapture = BUTTON_WHEEL_R + 1;
+			g_MouseCapture = BUTTON_WHEEL_R1 + 1;
 			EncoderAddValue(1);
+			SetCapture(hWnd);
+		}
+		else if (mx >= WHEEL_X22 && mx < WHEEL_X22 + WHEEL_SIZE)
+		{
+			g_MouseCapture = BUTTON_WHEEL_R2 + 1;
+			EncoderAddValue(20);
 			SetCapture(hWnd);
 		}
 		return;
