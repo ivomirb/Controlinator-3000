@@ -695,9 +695,9 @@ function UpdateJogW()
 	var feedT;
 	switch (g_JogAxis)
 	{
-		case "X": feedT = grblParams["$110"]; break;
-		case "Y": feedT = grblParams["$111"]; break;
-		case "Z": feedT = grblParams["$112"]; break;
+		case "X": feedT = grblParams.$110; break;
+		case "Y": feedT = grblParams.$111; break;
+		case "Z": feedT = grblParams.$112; break;
 	}
 	var feed = Math.min(feedT, step * 6000); // limit feed to 100 steps per second
 
@@ -771,8 +771,8 @@ function QueueJogXY(joyX, joyY, dt)
 	{
 		return false;
 	}
-	var feedX = grblParams["$110"] / 60; // mm/sec
-	var feedY = grblParams["$111"] / 60; // mm/sec
+	var feedX = grblParams.$110 / 60; // mm/sec
+	var feedY = grblParams.$111 / 60; // mm/sec
 	// requested move in mm
 	var newX = ClampSafeAbsoluteMove(g_JogXYLocation.X, joyX * feedX * dt / JOYSTICK_STEPS, 'X', false);
 	var newY = ClampSafeAbsoluteMove(g_JogXYLocation.Y, joyY * feedY * dt / JOYSTICK_STEPS, 'Y', false);
@@ -873,9 +873,9 @@ function HandleJogCommand(command)
 		var feedT;
 		switch (axis)
 		{
-			case "X": feedT = grblParams["$110"]; break;
-			case "Y": feedT = grblParams["$111"]; break;
-			case "Z": feedT = grblParams["$112"]; break;
+			case "X": feedT = grblParams.$110; break;
+			case "Y": feedT = grblParams.$111; break;
+			case "Z": feedT = grblParams.$112; break;
 		}
 
 		// absolute move, work or machine, mm
@@ -928,9 +928,9 @@ function HandleJogCommand(command)
 		var feedT;
 		switch (axis)
 		{
-			case "X": feedT = grblParams["$110"]; break;
-			case "Y": feedT = grblParams["$111"]; break;
-			case "Z": feedT = grblParams["$112"]; break;
+			case "X": feedT = grblParams.$110; break;
+			case "Y": feedT = grblParams.$111; break;
+			case "Z": feedT = grblParams.$112; break;
 		}
 		feedT /= bInches ? 25.4 : 1;
 
@@ -964,9 +964,9 @@ function HandleJogCommand(command)
 			var speed;
 			switch (axis)
 			{
-				case "X": speed = grblParams["$110"]; break;
-				case "Y": speed = grblParams["$111"]; break;
-				case "Z": speed = grblParams["$112"]; break;
+				case "X": speed = grblParams.$110; break;
+				case "Y": speed = grblParams.$111; break;
+				case "Z": speed = grblParams.$112; break;
 			}
 			speed *= (inches ? 1/25.4 : 1);
 			const limits = GetSafeLimits(axis);
@@ -1339,13 +1339,13 @@ function HandleProbeCommand(command)
 			var limits = GetSafeLimits('Z');
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z < limits.max)
 			{
-				gcode = "$J=G53 G21 G90 Z" + limits.max.toFixed(3) + " F" + grblParams["$112"];
+				gcode = "$J=G53 G21 G90 Z" + limits.max.toFixed(3) + " F" + grblParams.$112;
 				sendGcode(gcode);
 			}
 		}
 		else
 		{
-			var gcode = "$J=G21 G91 Z100" + " F" + grblParams["$112"];
+			var gcode = "$J=G21 G91 Z100" + " F" + grblParams.$112;
 			sendGcode(gcode);
 		}
 		g_ProbeJog = 1;
@@ -1357,7 +1357,7 @@ function HandleProbeCommand(command)
 			// not idle or the probe is touching. can't go any lower
 			return;
 		}
-		var feed = grblParams["$112"] * g_ProbeZDownFeed / 100;
+		var feed = grblParams.$112 * g_ProbeZDownFeed / 100;
 		var gcode;
 		if (g_PendantSettings.safeLimitsEnabled)
 		{
@@ -1429,7 +1429,7 @@ function HandleProbeCommand(command)
 		{
 			// initiate seek 1
 			var settings = (probeType == 0 || probeType == 3) ? g_PendantSettings.zProbe : g_PendantSettings.toolProbe;
-			var feed = Math.max(Math.min(settings.seek1.feed, grblParams["$112"]), 10);
+			var feed = Math.max(Math.min(settings.seek1.feed, grblParams.$112), 10);
 			var gcode = "G38.3 G21 G91 Z-" + settings.seek1.travel.toFixed(3) + " F" + feed.toFixed(0);
 			g_LastProbeZ = undefined;
 			socket.off('prbResult');
@@ -1462,7 +1462,7 @@ function HandleProbeCommand(command)
 					}
 					var maxZ = GetSafeLimits('Z').max;
 					var travel = settings.retract1.travel;
-					var feed = Math.max(Math.min(settings.retract1.feed, grblParams["$112"]), 10);
+					var feed = Math.max(Math.min(settings.retract1.feed, grblParams.$112), 10);
 					if (settings.style == "single" && g_PendantSettings.safeLimitsEnabled && travel > maxZ - probe.z)
 					{
 						if (probe.z < maxZ)
@@ -1478,7 +1478,7 @@ function HandleProbeCommand(command)
 					if (settings.style == "dual")
 					{
 						// seek 2
-						feed = Math.max(Math.min(settings.seek2.feed, grblParams["$112"]), 10);
+						feed = Math.max(Math.min(settings.seek2.feed, grblParams.$112), 10);
 						gcode += "\nG38.3 G21 G91 Z-" + settings.seek2.travel.toFixed(3) + " F" + feed.toFixed(0);
 						sendGcode(gcode);
 					}
@@ -1507,7 +1507,7 @@ function HandleProbeCommand(command)
 					}
 					var maxZ = GetSafeLimits('Z').max;
 					var travel = settings.retract2.travel;
-					var feed = Math.max(Math.min(settings.retract2.feed, grblParams["$112"]), 10);
+					var feed = Math.max(Math.min(settings.retract2.feed, grblParams.$112), 10);
 					if (g_PendantSettings.safeLimitsEnabled && travel > maxZ - probe.z)
 					{
 						if (probe.z < maxZ)
@@ -1536,8 +1536,8 @@ function HandleProbeCommand(command)
 	else if (command == "GOTOSENSOR")
 	{
 		// go to tool probe
-		var feedZ = grblParams["$112"];
-		var feedXY = grblParams["$110"];
+		var feedZ = grblParams.$112;
+		var feedXY = grblParams.$110;
 		var gcode = "$J=G53 G21 G90 Z" + g_PendantSettings.toolProbe.location.Z.toFixed(3) + " F" + feedZ;
 		var probeX = g_PendantSettings.toolProbe.location.X;
 		var probeY = g_PendantSettings.toolProbe.location.Y;
@@ -1984,8 +1984,8 @@ function TryComHandler(data)
 			clearTimeout(g_CurrentTryTimer);
 			g_PendantPort = g_CurrentTryPort;
 			printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Connected on port " + html + "</span>")
-			$('#pendant > span.icon > span > svg > path').attr("fill", "currentColor");
-			$('#DisconnectPendant').removeClass("disabled");
+			$('#pendant > span.icon > span > svg > path').attr('fill', 'currentColor');
+			$('#DisconnectPendant').removeClass('disabled');
 
 			g_CurrentTryParser.off('data', TryComHandler);
 			g_CurrentTryParser.on('data', PendantComHandler);
@@ -2015,7 +2015,7 @@ function TryComHandler(data)
 			g_ComPorts = undefined;
 			g_StatusCounter = 0;
 
-			localStorage.setItem("PendantPort", g_PendantPort.path);
+			localStorage.setItem('PendantPort', g_PendantPort.path);
 			HandleHandshake();
 			WritePort("SETTINGS");
 		}
@@ -2057,7 +2057,7 @@ function TryNextPort()
 	{
 		g_ComPorts = undefined;
 		printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Failed to find a pendant</span>")
-		$('#ConnectPendant').removeClass("disabled");
+		$('#ConnectPendant').removeClass('disabled');
 	}
 	else
 	{
@@ -2098,13 +2098,13 @@ window.ConnectPendant = function()
 			printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>The pendant requires OpenBuilds v1.0.371 or later</span>")
 			return;
 		}*/
-		$('#ConnectPendant').addClass("disabled");
-		$('#DisconnectPendant').addClass("disabled");
+		$('#ConnectPendant').addClass('disabled');
+		$('#DisconnectPendant').addClass('disabled');
 		printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Looking for pendant...</span>")
 		SerialPort.list().then(function(ports)
 			{
 				g_ComPorts = ports.map((x) => x.path);
-				var lastPort = localStorage.getItem("PendantPort");
+				var lastPort = localStorage.getItem('PendantPort');
 				if (lastPort)
 				{
 					// sort so the lastPort is first in the list
@@ -2125,10 +2125,10 @@ window.DisconnectPendant = function()
 		g_PendantPort = undefined;
 		g_SerialQueue = [];
 		g_bSerialPending = false;
-		$('#ConnectPendant').removeClass("disabled");
+		$('#ConnectPendant').removeClass('disabled');
 	}
-	$('#pendant > span.icon > span > svg > path').attr("fill", "silver");
-	$('#DisconnectPendant').addClass("disabled");
+	$('#pendant > span.icon > span > svg > path').attr('fill', 'silver');
+	$('#DisconnectPendant').addClass('disabled');
 	socket.off('status', HandleStatus);
 	socket.off('queueCount', HandleQueueStatus);
 	socket.off('jobComplete', HandleJobComplete);
@@ -2192,13 +2192,13 @@ function StartJoystick()
 	const Scale = 100;
 	const MarkerSize = 5;
 
-	var calibrateCtx = document.getElementById("PendantCalCanvas").getContext("2d");
+	var calibrateCtx = document.getElementById('PendantCalCanvas').getContext("2d");
 	calibrateCtx.lineWidth = 2;
 	calibrateCtx.beginPath();
 	calibrateCtx.rect(centerX - Scale - MarkerSize, centerY - Scale - MarkerSize, (Scale+MarkerSize)*2 + 2, (Scale+MarkerSize)*2 + 2);
 	calibrateCtx.stroke();
 
-	var calibrateCoords = document.getElementById("PendantCalCoords");
+	var calibrateCoords = document.getElementById('PendantCalCoords');
 	calibrateCoords.innerHTML = ""
 
 	g_CalibrationTimer = setInterval(function()
@@ -2262,7 +2262,7 @@ function StopJoystick()
 		g_RawJoyX = undefined;
 		g_RawJoyY = undefined;
 	}
-	document.getElementById("PendantCalText").innerHTML = "";
+	document.getElementById('PendantCalText').innerHTML = "";
 	WritePort("CAL:STOPJ");
 	g_CalibrationStage = undefined;
 }
@@ -2285,7 +2285,7 @@ window.CancelCalibration = function(external)
 	{
 		$('#PendantCalibrate').show();
 		$('#PendantCalibrateCancel').hide();
-		document.getElementById("PendantCalText").innerHTML = "";
+		document.getElementById('PendantCalText').innerHTML = "";
 		g_CalibrationStage = undefined;
 		if (!external)
 		{
@@ -2301,12 +2301,12 @@ function SetCalibrationStage(stage)
 
 	if (g_CalibrationStage == 0)
 	{
-		document.getElementById("PendantCalText").innerHTML = "<b>Calibrating Range</b><br>Move the stick to all corners multiple times, then click OK on the pendant.";
+		document.getElementById('PendantCalText').innerHTML = "<b>Calibrating Range</b><br>Move the stick to all corners multiple times, then click OK on the pendant.";
 		UpdateCalibration();
 	}
 	else if (g_CalibrationStage <= 8)
 	{
-		document.getElementById("PendantCalText").innerHTML = "<b>Calibrating Center [" + g_CalibrationStage + " of 8]</b><br>Pull the stick away from the center, then release it, then press OK on the pendant.<br>Use different direction each time.";
+		document.getElementById('PendantCalText').innerHTML = "<b>Calibrating Center [" + g_CalibrationStage + " of 8]</b><br>Pull the stick away from the center, then release it, then press OK on the pendant.<br>Use different direction each time.";
 		g_JoyCalX[2] = Math.min(g_JoyCalX[2], g_RawJoyX);
 		g_JoyCalX[3] = Math.max(g_JoyCalX[3], g_RawJoyX);
 		g_JoyCalY[2] = Math.min(g_JoyCalY[2], g_RawJoyY);
@@ -2317,7 +2317,7 @@ function SetCalibrationStage(stage)
 		WritePort("CAL:STOPC");
 		$('#PendantCalibrate').show();
 		$('#PendantCalibrateCancel').hide();
-		document.getElementById("PendantCalText").innerHTML = "<b>Done!</b>";
+		document.getElementById('PendantCalText').innerHTML = "<b>Done!</b>";
 		g_CalibrationStage = undefined;
 
 		g_JoySetX = g_JoyCalX;
@@ -2864,21 +2864,21 @@ function GetDefaultSafeLimits(axis)
 	var mask;
 	switch (axis)
 	{
-		case "X": size = parseFloat(grblParams["$130"]); mask = 1; break;
-		case "Y": size = parseFloat(grblParams["$131"]); mask = 2; break;
-		case "Z": size = parseFloat(grblParams["$132"]); mask = 4; break;
+		case "X": size = parseFloat(grblParams.$130); mask = 1; break;
+		case "Y": size = parseFloat(grblParams.$131); mask = 2; break;
+		case "Z": size = parseFloat(grblParams.$132); mask = 4; break;
 	}
 
 	if (laststatus.comms.connectionStatus != 0 && size != undefined)
 	{
-		var homeNegative = (parseInt(grblParams["$23"]) & mask) != 0; // axis homes in the negative direction
+		var homeNegative = (parseInt(grblParams.$23) & mask) != 0; // axis homes in the negative direction
 		if (laststatus.machine.firmware.features.contains('Z'))
 		{
 			return homeNegative ? {min: 0, max: size} : {min: -size, max: 0};
 		}
 		else
 		{
-			var pullOff = parseFloat(grblParams["$27"]);
+			var pullOff = parseFloat(grblParams.$27);
 			return homeNegative ? {min: pullOff - size, max: 0} : {min: -size, max: -pullOff};
 		}
 	}
@@ -2973,7 +2973,7 @@ function ReadSettingsFromDialog(updateRomSettings)
 	}
 
 	// save to persistent storage and push to the pendant
-	localStorage.setItem("PendantSettings", JSON.stringify(g_PendantSettings));
+	localStorage.setItem('PendantSettings', JSON.stringify(g_PendantSettings));
 	PushSettings(updateRomSettings);
 }
 
@@ -2982,7 +2982,7 @@ function UpdateSettingsControls(settings, romSettings)
 {
 	// main settings
 	$('#PendantAutoConnect').prop('checked', settings.autoConnect);
-	var select = $('#PendantDisplayUnits').data("select");
+	var select = $('#PendantDisplayUnits').data('select');
 	if (select)
 	{
 		select.val(settings.displayUnits);
@@ -3020,7 +3020,7 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantPauseSpindle').prop('checked', settings.pauseSpindle);
 	$('#PendantJobChecklist').val(settings.jobChecklist);
 
-	var select = $('#PendantZStyle').data("select");
+	var select = $('#PendantZStyle').data('select');
 	if (select)
 	{
 		select.val(settings.zProbe.style);
@@ -3056,7 +3056,7 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantZRetract2F').val(settings.zProbe.retract2.feed);
 
 
-	select = $('#PendantToolStyle').data("select");
+	select = $('#PendantToolStyle').data('select');
 	if (select)
 	{
 		select.val(settings.toolProbe.style);
@@ -3233,9 +3233,9 @@ function InitializePendantPlugin()
 	$('#pendant').prop('ShowDialog', () => { return ShowPendantDialog; });
 
 	// read settings
-	if (localStorage.getItem("PendantSettings"))
+	if (localStorage.getItem('PendantSettings'))
 	{
-		var settings = JSON.parse(localStorage.getItem("PendantSettings"));
+		var settings = JSON.parse(localStorage.getItem('PendantSettings'));
 		if (settings)
 		{
 			MergeSettingsRec(g_PendantSettings, settings);
