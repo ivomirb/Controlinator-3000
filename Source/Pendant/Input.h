@@ -98,14 +98,14 @@ void ReleaseAllButtons( void )
 // Joystick
 
 // raw joystick position
-uint16_t g_JoyX = 512;
-uint16_t g_JoyY = 512;
+uint16_t g_JoyX = JOYSTICK_HALF;
+uint16_t g_JoyY = JOYSTICK_HALF;
 
 void UpdateJoystick()
 {
 #ifndef EMULATOR
-	g_JoyX = 1023 - analogRead(g_JoyPinX);
-	g_JoyY = 1023 - analogRead(g_JoyPinY);
+	g_JoyX = analogRead(g_JoyPinX);
+	g_JoyY = analogRead(g_JoyPinY);
 #endif
 }
 

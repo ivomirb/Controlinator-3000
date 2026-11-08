@@ -37,9 +37,9 @@ void InitializeInput( void )
 	{
 		pinMode(pgm_read_byte(&g_ButtonPins[i]), INPUT_PULLUP);
 	}
+	analogReadResolution(JOYSTICK_BITS);
 	pinMode(g_JoyPinX, INPUT);
 	pinMode(g_JoyPinY, INPUT);
-	analogReadResolution(JOYSTICK_BITS);
 }
 
 uint16_t ReadButtons( void )
