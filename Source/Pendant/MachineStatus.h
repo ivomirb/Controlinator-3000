@@ -10,8 +10,6 @@ enum MachineStatus
 	STATUS_RUN,
 	STATUS_CHECK, // what's this?
 	STATUS_HOME, // never happens?
-	STATUS_RUNNING, // from OB CONTROL
-	STATUS_RESUMING, // from OB CONTROL
 	STATUS_DOOR3_RESUMING, // door:3 - door closed, resuming in progress
 
 	// the statuses below are considered "inactive"
@@ -23,8 +21,6 @@ enum MachineStatus
 	STATUS_DOOR2_STOPPING, // door:2 - door opened, stopping in progress
 	STATUS_ALARM,
 	STATUS_SLEEP,
-	STATUS_STOPPED, // from OB CONTROL
-	STATUS_PAUSED, // from OB CONTROL
 
 	STATUS_COUNT,
 };
@@ -41,8 +37,6 @@ const char g_StatusNames[] PROGMEM =
 	"Run\0"
 	"Check\0"
 	"Home\0"
-	"Running\0"
-	"Resuming\0"
 	"Door:3\0"
 
 	"Idle\0"
@@ -53,8 +47,6 @@ const char g_StatusNames[] PROGMEM =
 	"Door:2\0"
 	"Alarm\0"
 	"Sleep\0"
-	"Stopped\0"
-	"Paused\0"
 };
 
 static_assert(sizeof(g_StatusNames) < 256, "");

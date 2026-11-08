@@ -269,7 +269,7 @@ void ZProbeScreen::Update( unsigned long time )
 		}
 		else
 		{
-			int8_t x, y;
+			int16_t x, y;
 			JogScreen::GetJoystick(&x, &y);
 			if (x != 0 || y != 0)
 			{
@@ -277,8 +277,8 @@ void ZProbeScreen::Update( unsigned long time )
 			}
 			if (pState->m_OldJoyX != x || pState->m_OldJoyY != y)
 			{
-				int16_t d1 = pState->m_OldJoyX * pState->m_OldJoyX + pState->m_OldJoyY * pState->m_OldJoyY;
-				int16_t d2 = x * x + y * y;
+				int32_t d1 = pState->m_OldJoyX * pState->m_OldJoyX + pState->m_OldJoyY * pState->m_OldJoyY;
+				int32_t d2 = x * x + y * y;
 				if ((x == 0 && y == 0) || d2 > d1 || time - pState->m_LastJoystickTime >= JOYSTICK_UPDATE_TIME)
 				{
 					pState->m_OldJoyX = x;

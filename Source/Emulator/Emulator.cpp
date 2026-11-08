@@ -82,8 +82,8 @@ HBRUSH g_ButtonBrushUp, g_ButtonBrushDown;
 
 int g_MouseCapture;
 int g_Ticks;
-int16_t g_JoyCenterX = 512;
-int16_t g_JoyCenterY = 512;
+int16_t g_JoyCenterX;
+int16_t g_JoyCenterY;
 
 typedef unsigned char uint8_t;
 typedef signed char int8_t;
@@ -122,6 +122,7 @@ uint16_t g_PhysicalButtons;
 
 #define pinMode(X, Y)
 
+#include "..\Pendant\Input.h" // for jog range
 #include "..\Pendant\Main.h"
 
 const int ABORT_BUTTON_SIZE = 50;
@@ -252,6 +253,8 @@ int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdL
 	g_ConsoleDlg = CreateDialog(hInst, MAKEINTRESOURCE(IDD_CONSOLE), hWnd, ConsoleProc);
 	SetWindowPos(g_ConsoleDlg, NULL, 500, 0, 0, 0, SWP_NOSIZE);
 	Serial.Init(GetDlgItem(g_ConsoleDlg, IDC_EDITOUTPUT));
+	g_JoyCenterX = JOYSTICK_HALF;
+	g_JoyCenterY = JOYSTICK_HALF;
 
 	setup();
 	HandleHandshake();
@@ -361,8 +364,8 @@ void OnPaint( HDC hdc )
 	Rectangle(hdc, JOYPAD_X, JOYPAD_Y, JOYPAD_X + JOYPAD_SIZE, JOYPAD_Y + JOYPAD_SIZE);
 	{
 		int size = JOYPAD_SIZE - JOYPAD_PAD*2;
-		int x = (g_JoyX * size) / 1024;
-		int y = ((1023 - g_JoyY) * size) / 1024;
+		int x = (g_JoyX * size) / JOYSTICK_RANGE;
+		int y = ((JOYSTICK_RANGE - 1 - g_JoyY) * size) / JOYSTICK_RANGE;
 		x += JOYPAD_X + JOYPAD_PAD;
 		y += JOYPAD_Y + JOYPAD_PAD;
 		MoveToEx(hdc, x, y - JOYPAD_MARKER_SIZE/2, NULL);
@@ -402,8 +405,8 @@ void UpdateState( int dt )
 		{
 			int x = state.Gamepad.sThumbLX;
 			int y = state.Gamepad.sThumbLY;
-			g_JoyX = (x+32767)/64;
-			g_JoyY = (y+32767)/64;
+			g_JoyX = (x+32767)/(65536/JOYSTICK_RANGE);
+			g_JoyY = (y+32767)/(65536/JOYSTICK_RANGE);
 		}
 	}
 	else if (g_MouseCapture != BUTTON_JOYSTICK + 1)
@@ -411,7 +414,7 @@ void UpdateState( int dt )
 		// auto-center stick
 		if (g_JoyX != g_JoyCenterX || g_JoyY != g_JoyCenterY)
 		{
-			double speed = dt * 3;
+			double speed = dt * JOYSTICK_RANGE/400;
 			double dx = g_JoyX - g_JoyCenterX;
 			double dy = g_JoyY - g_JoyCenterY;
 			double dist = sqrt(dx*dx + dy*dy);
@@ -467,8 +470,8 @@ POINT TransformJoypad( int mx, int my )
 	if (my < 0) my = 0;
 	if (my >= size) my = size - 1;
 	POINT p;
-	p.x = mx * 1024 / size;
-	p.y = my * 1024 / size;
+	p.x = mx * JOYSTICK_RANGE / size;
+	p.y = my * JOYSTICK_RANGE / size;
 	return p;
 }
 
@@ -533,7 +536,7 @@ void OnLButtonDown( HWND hWnd, int mx, int my )
 		SetCapture(hWnd);
 		POINT p = TransformJoypad(mx, my);
 		g_JoyX = (short)p.x;
-		g_JoyY = 1023 - (short)p.y;
+		g_JoyY = JOYSTICK_RANGE - 1 - (short)p.y;
 	}
 }
 
@@ -591,9 +594,9 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 			ReleaseCapture();
 			if (g_MouseCapture == BUTTON_JOYSTICK + 1)
 			{
-				// 490 - 540
-				g_JoyCenterX = 490 + rand()*50/RAND_MAX;
-				g_JoyCenterY = 490 + rand()*50/RAND_MAX;
+				// +/- 5%
+				g_JoyCenterX = JOYSTICK_HALF - JOYSTICK_HALF/20 + (rand()*JOYSTICK_HALF)/(RAND_MAX*10);
+				g_JoyCenterY = JOYSTICK_HALF - JOYSTICK_HALF/20 + (rand()*JOYSTICK_HALF)/(RAND_MAX*10);
 			}
 			g_MouseCapture = 0;
 		}
@@ -606,7 +609,7 @@ LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam 
 			int my = (short)HIWORD(lParam);
 			POINT p = TransformJoypad(mx, my);
 			g_JoyX = (short)p.x;
-			g_JoyY = 1023 - (short)p.y;
+			g_JoyY = JOYSTICK_RANGE - 1 - (short)p.y;
 		}
 		break;
 
