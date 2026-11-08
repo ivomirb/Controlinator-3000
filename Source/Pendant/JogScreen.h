@@ -194,7 +194,7 @@ void JogScreen::Draw( void )
 void JogScreen::Update( unsigned long time )
 {
 	auto *pState = GetActiveState();
-	if (g_MachineStatus < STATUS_IDLE && g_MachineStatus != STATUS_JOG && g_MachineStatus != STATUS_RUN && g_MachineStatus != STATUS_RUNNING)
+	if (g_MachineStatus < STATUS_IDLE && g_MachineStatus != STATUS_JOG && g_MachineStatus != STATUS_RUN)
 	{
 		CloseScreen();
 		return;
@@ -340,7 +340,7 @@ void JogScreen::Update( unsigned long time )
 			{
 				pState->m_LastInputTime = time;
 				pState->m_LastWheelTime = time;
-				if (g_MachineStatus == STATUS_IDLE || g_MachineStatus == STATUS_JOG || g_MachineStatus == STATUS_RUNNING)
+				if (g_MachineStatus == STATUS_IDLE || g_MachineStatus == STATUS_JOG)
 				{
 					uint16_t step = m_StepRates[m_StepIndex];
 					if (g_bShowInches)
@@ -360,7 +360,7 @@ void JogScreen::Update( unsigned long time )
 	else if (pState->m_Axis == 3)
 	{
 		// XY jogging
-		int8_t x, y;
+		int16_t x, y;
 		GetJoystick(&x, &y);
 		if (x != 0 || y != 0)
 		{
@@ -368,8 +368,8 @@ void JogScreen::Update( unsigned long time )
 		}
 		if (pState->m_OldJoyX != x || pState->m_OldJoyY != y)
 		{
-			int16_t d1 = pState->m_OldJoyX * pState->m_OldJoyX + pState->m_OldJoyY * pState->m_OldJoyY;
-			int16_t d2 = x * x + y * y;
+			int32_t d1 = pState->m_OldJoyX * pState->m_OldJoyX + pState->m_OldJoyY * pState->m_OldJoyY;
+			int32_t d2 = x * x + y * y;
 			if ((x == 0 && y == 0) || d2 > d1 || time - pState->m_LastJoystickTime >= JOYSTICK_UPDATE_TIME)
 			{
 				pState->m_OldJoyX = x;
@@ -450,10 +450,10 @@ void JogScreen::ParseJogSteps( const char *str )
 #endif
 }
 
-void JogScreen::GetJoystick( int8_t *px, int8_t *py )
+void JogScreen::GetJoystick( int16_t *px, int16_t *py )
 {
-	*px = QuantizeJoystick(g_JoyX, g_RomSettings.calibration);
-	*py = QuantizeJoystick(g_JoyY, g_RomSettings.calibration + 4);
+	*px = QuantizeJoystick((g_RomSettings.calibration[0]&2) ? g_JoyY : g_JoyX, g_RomSettings.calibration);
+	*py = QuantizeJoystick((g_RomSettings.calibration[5]&2) ? g_JoyX : g_JoyY, g_RomSettings.calibration + 5);
 }
 
 void JogScreen::CancelJogUp( void )

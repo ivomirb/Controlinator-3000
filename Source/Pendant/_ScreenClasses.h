@@ -184,8 +184,8 @@ private:
 		uint8_t m_bJoggingUp : 1;
 
 		// previous quantized joystick position
-		int8_t m_OldJoyX;
-		int8_t m_OldJoyY;
+		int16_t m_OldJoyX;
+		int16_t m_OldJoyY;
 
 #if USE_SHARED_STATE
 	};
@@ -212,7 +212,7 @@ private:
 		BUTTON_BACK = 7,
 	};
 
-	static void GetJoystick( int8_t *px, int8_t *py );
+	static void GetJoystick( int16_t *px, int16_t *py );
 	friend class ZProbeScreen;
 	friend union ScreenTimeshare;
 
@@ -478,8 +478,8 @@ public:
 		unsigned long m_LastJoystickTime; // time of last sent joystick message
 
 		// previous quantized joystick position
-		int8_t m_OldJoyX;
-		int8_t m_OldJoyY;
+		int16_t m_OldJoyX;
+		int16_t m_OldJoyY;
 #endif
 
 #if USE_SHARED_STATE

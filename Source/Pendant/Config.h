@@ -22,6 +22,7 @@
 #define DISABLE_ZPROBE_NUDGE // Save some memory
 #define USE_NEW_ENCODER 0 // You can set to 1 (for example to test a new wheel hardware), but it will disable some other features to save memory
 #define USE_WATCHDOG 1
+#define JOYSTICK_BITS 10
 
 #if USE_NEW_ENCODER
 // Disable few of the non-essential screens to free up some memory for the NewEncoder library
@@ -37,6 +38,7 @@
 #define PARTIAL_SCREEN_UPDATE 1
 #define USE_NEW_ENCODER 1
 #define USE_WATCHDOG 1
+#define JOYSTICK_BITS 10
 
 #elif defined(__AVR_ATmega4808__) // Arduino Nano Every clone with ATmega4808
 
@@ -44,6 +46,7 @@
 #define PARTIAL_SCREEN_UPDATE 1
 #define USE_NEW_ENCODER 0 // NewEncoder doesn't recognize ATmega4808 out of the box. You need to modify interrupt_pins.h to get it to compile
 #define USE_WATCHDOG 1
+#define JOYSTICK_BITS 10
 
 #elif defined(ARDUINO_NANO_R4)
 
@@ -51,6 +54,7 @@
 #define PARTIAL_SCREEN_UPDATE 1
 #define USE_NEW_ENCODER 0 // NewEncoder doesn't recognize Nano R4 out of the box. The pins definitions are different
 #define USE_WATCHDOG 1
+#define JOYSTICK_BITS 14
 
 #elif defined(_WIN32) // Pendant emulator
 
@@ -58,6 +62,7 @@
 #define EMULATOR
 #define U8G2_FULL_BUFFER 1
 #define PARTIAL_SCREEN_UPDATE 1
+#define JOYSTICK_BITS 14
 
 #else // Add support for more hardware here
 #error "Unknown microcontroller"

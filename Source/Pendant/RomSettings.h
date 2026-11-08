@@ -1,13 +1,13 @@
 #pragma once
 
-const uint16_t SETTINGS_SIGNATURE = 37152;
+const uint16_t SETTINGS_SIGNATURE = 28728;
 const char g_StrDefaultName[] PROGMEM = "Controlinator 3000";
 
 // Persistent settings stored in the pendant's ROM
 struct RomSettings
 {
 	uint16_t signature; // must match SETTINGS_SIGNATURE
-	uint16_t calibration[8];
+	uint16_t calibration[10];
 	char pendantName[19];
 #if USE_WATCHDOG
 	uint8_t bCrash;
@@ -28,13 +28,15 @@ void ReadRomSettings( void )
 		g_RomSettings.signature = SETTINGS_SIGNATURE;
 		strcpy_P(g_RomSettings.pendantName, g_StrDefaultName);
 		g_RomSettings.calibration[0] = 0;
-		g_RomSettings.calibration[1] = 512-64;
-		g_RomSettings.calibration[2] = 512+64;
-		g_RomSettings.calibration[3] = 1023;
-		g_RomSettings.calibration[4] = 0;
-		g_RomSettings.calibration[5] = 512-64;
-		g_RomSettings.calibration[6] = 512+64;
-		g_RomSettings.calibration[7] = 1023;
+		g_RomSettings.calibration[1] = 0;
+		g_RomSettings.calibration[2] = JOYSTICK_RANGE*7/16;
+		g_RomSettings.calibration[3] = JOYSTICK_RANGE*9/16;
+		g_RomSettings.calibration[4] = JOYSTICK_RANGE-1;
+		g_RomSettings.calibration[5] = 0;
+		g_RomSettings.calibration[6] = 0;
+		g_RomSettings.calibration[7] = JOYSTICK_RANGE*7/16;
+		g_RomSettings.calibration[8] = JOYSTICK_RANGE*9/16;
+		g_RomSettings.calibration[9] = JOYSTICK_RANGE-1;
 #if USE_WATCHDOG
 		g_RomSettings.bCrash = 0;
 #endif
@@ -56,7 +58,7 @@ void ParseName( const char *name )
 // string format: <min x>,<max x>,<min deadx>,<max deadx>,<min y>,<max y>,<min deady>,<max deady>
 void ParseCalibration( const char *str )
 {
-	for (uint8_t i = 0; i < 8; i++)
+	for (uint8_t i = 0; i < 10; i++)
 	{
 		g_RomSettings.calibration[i] = atoi(str);
 		const char *end = strchr(str, ',');
@@ -64,19 +66,21 @@ void ParseCalibration( const char *str )
 		str = end + 1;
 	}
 
-	if (g_RomSettings.calibration[1] <= g_RomSettings.calibration[0])
-		g_RomSettings.calibration[1] = g_RomSettings.calibration[0] + 1;
+	g_RomSettings.calibration[0] &= 3;
 	if (g_RomSettings.calibration[2] <= g_RomSettings.calibration[1])
 		g_RomSettings.calibration[2] = g_RomSettings.calibration[1] + 1;
 	if (g_RomSettings.calibration[3] <= g_RomSettings.calibration[2])
 		g_RomSettings.calibration[3] = g_RomSettings.calibration[2] + 1;
+	if (g_RomSettings.calibration[4] <= g_RomSettings.calibration[3])
+		g_RomSettings.calibration[4] = g_RomSettings.calibration[3] + 1;
 
-	if (g_RomSettings.calibration[5] <= g_RomSettings.calibration[4])
-		g_RomSettings.calibration[5] = g_RomSettings.calibration[4] + 1;
-	if (g_RomSettings.calibration[6] <= g_RomSettings.calibration[5])
-		g_RomSettings.calibration[6] = g_RomSettings.calibration[5] + 1;
+	g_RomSettings.calibration[5] = (g_RomSettings.calibration[5]&1) | (g_RomSettings.calibration[0]&2);
 	if (g_RomSettings.calibration[7] <= g_RomSettings.calibration[6])
 		g_RomSettings.calibration[7] = g_RomSettings.calibration[6] + 1;
+	if (g_RomSettings.calibration[8] <= g_RomSettings.calibration[7])
+		g_RomSettings.calibration[8] = g_RomSettings.calibration[7] + 1;
+	if (g_RomSettings.calibration[9] <= g_RomSettings.calibration[8])
+		g_RomSettings.calibration[9] = g_RomSettings.calibration[8] + 1;
 
 	EEPROM.put(SETTINGS_ROM_ADDRESS, g_RomSettings);
 }

@@ -3,7 +3,15 @@
 const uint8_t BUTTON_JOYSTICK = 8;
 const uint8_t BUTTON_ABORT = 9;
 
-const int JOYSTICK_STEPS = 100; // number of steps in the joystick range
+#if JOYSTICK_BITS == 10
+#define JOYSTICK_RANGE 1024
+#define JOYSTICK_HALF 512
+#elif JOYSTICK_BITS == 14
+#define JOYSTICK_RANGE 16384
+#define JOYSTICK_HALF 8192
+#endif
+
+const int32_t JOYSTICK_STEPS = 1000; // number of steps in the joystick range
 
 #ifndef BUTTON_COUNT
 #define BUTTON_COUNT 10
@@ -102,17 +110,20 @@ void UpdateJoystick()
 }
 
 // Quantizes the raw joystick position to range [-JOYSTICK_STEPS..JOYSTICK_STEPS] based on the calibration settings
-int8_t QuantizeJoystick( uint16_t val, const uint16_t calibration[4] )
+int16_t QuantizeJoystick( uint16_t val, const uint16_t calibration[5] )
 {
-	if (val < calibration[1])
+	if (calibration[0]&1) {
+		val = JOYSTICK_RANGE - 1 - val;
+	}
+	if (val < calibration[2])
 	{
-		int8_t res = - 1 - ((calibration[1] - val - 1) * JOYSTICK_STEPS) / (calibration[1] - calibration[0]);
+		int16_t res = - 1 - ((calibration[2] - val - 1) * JOYSTICK_STEPS) / (calibration[2] - calibration[1]);
 		return res > -JOYSTICK_STEPS ? res : -JOYSTICK_STEPS;
 	}
 
-	if (val > calibration[2])
+	if (val > calibration[3])
 	{
-		int8_t res = 1 + (val - calibration[2] - 1) * JOYSTICK_STEPS / (calibration[3] - calibration[2]);
+		int16_t res = 1 + (val - calibration[3] - 1) * JOYSTICK_STEPS / (calibration[4] - calibration[3]);
 		return res < JOYSTICK_STEPS ? res : JOYSTICK_STEPS;
 	}
 

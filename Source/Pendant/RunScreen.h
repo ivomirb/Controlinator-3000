@@ -11,7 +11,7 @@ RunScreen::ScreenState RunScreen::DecodeState( void ) const
 		return STATE_IDLE;
 	}
 
-	if (g_MachineStatus == STATUS_RUN || g_MachineStatus == STATUS_RUNNING || g_MachineStatus == STATUS_RESUMING || g_MachineStatus == STATUS_DOOR3_RESUMING)
+	if (g_MachineStatus == STATUS_RUN || g_MachineStatus == STATUS_DOOR3_RESUMING)
 	{
 		return STATE_RUNNING;
 	}
@@ -21,7 +21,7 @@ RunScreen::ScreenState RunScreen::DecodeState( void ) const
 		return STATE_PAUSING;
 	}
 
-	if (g_MachineStatus == STATUS_DOOR1_OPENED || g_MachineStatus == STATUS_PAUSED)
+	if (g_MachineStatus == STATUS_DOOR1_OPENED)
 	{
 		return STATE_PAUSED;
 	}

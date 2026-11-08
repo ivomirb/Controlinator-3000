@@ -1,4 +1,4 @@
-#define PENDANT_VERSION "1.5" // must match Pendant.js
+#define PENDANT_VERSION "2.0" // must match Pendant.js
 #define PENDANT_BAUD_RATE 38400 // must match Pendant.js
 
 #include "Config.h"
@@ -11,9 +11,9 @@ const uint8_t g_Font[] U8X8_PROGMEM =
 char g_TextBuf[20];
 
 #include "SpecialStrings.h"
+#include "Input.h"
 #include "RomSettings.h"
 #include "Graphics.h"
-#include "Input.h"
 #include "MachineStatus.h"
 
 const unsigned long PING_TIME = 10000; // 10 seconds of no PONG will disconnect (could be shorter, but I noticed that when VSCode starts up, the COM traffic stalls for a few seconds)
@@ -227,12 +227,12 @@ void HandleSettings( void )
 	Serial.print(ROMSTR("NAME:"));
 	Serial.println(g_RomSettings.pendantName);
 	Serial.print(ROMSTR("CALIBRATION:"));
-	for (uint8_t i = 0; i < 7; i++)
+	for (uint8_t i = 0; i < 9; i++)
 	{
 		Serial.print(g_RomSettings.calibration[i]);
 		Serial.print(g_StrComma);
 	}
-	Serial.println(g_RomSettings.calibration[7]);
+	Serial.println(g_RomSettings.calibration[9]);
 }
 
 // Processes a command from the PC

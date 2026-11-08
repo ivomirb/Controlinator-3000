@@ -27,11 +27,16 @@ const WHEEL_JOG_AHEAD_TIME = 600; // up to 600ms of jog time submitted to Grbl
 const WHEEL_JOG_STOP_TIME = 500; // 500ms seems like a good value
 
 // These must match Main.h
-const PENDANT_VERSION = "1.5";
+const PENDANT_VERSION = "2.0";
 const PENDANT_BAUD_RATE = 38400;
 
+// Must match Config.h
+const JOYSTICK_BITS = 14; // or 10
+const JOYSTICK_RANGE = JOYSTICK_BITS == 14 ? 16384 : 1024;
+const JOYSTICK_HALF = JOYSTICK_BITS == 14 ? 8192 : 512;
+
 // Must match Input.h
-const JOYSTICK_STEPS = 100;
+const JOYSTICK_STEPS = 1000;
 
 const COM_LOG_LEVEL = 0; // 0 - none, 1 - commands, 2 - everything, 3 - everything+ACK
 
@@ -43,6 +48,11 @@ const {
 } = require('@serialport/parser-readline');
 
 const GROOVE_CONTROL_VERSION = ((typeof APP_NAME == "string") && APP_NAME == "Groove Control") ? APP_VERSION : 0;
+
+if (GROOVE_CONTROL_VERSION < 1001)
+{
+	throw "The pendant requires Groove Control v1.001 or higher";
+}
 
 var g_PendantPort;
 
@@ -81,21 +91,17 @@ const g_StatusMap =
 	"Run": 3,
 	"Check": 4,
 	"Home": 5,
-	"Running": 6,
-	"Resuming": 7,
-	"Door:3": 8,
-	"Door:4": 8, // for some reason Door:3 was changed to Door:4 in grblHAL, and Door:3 is unused
+	"Door:3": 6,
+	"Door:4": 6, // for some reason Door:3 was changed to Door:4 in grblHAL, and Door:3 is unused
 
-	"Idle": 9,
-	"Hold:0": 10,
-	"Hold:1": 11,
-	"Door:0": 12,
-	"Door:1": 13,
-	"Door:2": 14,
-	"Alarm": 15,
-	"Sleep": 16,
-	"Stopped": 17,
-	"Paused": 18,
+	"Idle": 7,
+	"Hold:0": 8,
+	"Hold:1": 9,
+	"Door:0": 10,
+	"Door:1": 11,
+	"Door:2": 12,
+	"Alarm": 13,
+	"Sleep": 14,
 };
 
 // Constructs a container with the default settings
@@ -161,8 +167,8 @@ function GetDefaultRomSettings()
 {
 	return {
 		pendantName: "Controlinator 3000",
-		calibrationX: [0, 1023, 512-64, 512+64],
-		calibrationY: [0, 1023, 512-64, 512+64],
+		calibrationX: [0, 0, JOYSTICK_RANGE*7/16, JOYSTICK_RANGE*9/16, JOYSTICK_RANGE-1],
+		calibrationY: [0, 0, JOYSTICK_RANGE*7/16, JOYSTICK_RANGE*9/16, JOYSTICK_RANGE-1],
 	};
 }
 
@@ -188,11 +194,7 @@ function GenerateStatusString(s)
 	else
 	{
 		status = g_StatusMap[s.comms.runStatus];
-		if (status == g_StatusMap.Running && (g_JogXYLocation != undefined || g_JogWQueue != undefined || g_ProbeJog != undefined))
-		{
-			status = g_StatusMap.Jog;
-		}
-		else if (status == g_StatusMap.Idle && s.comms.connectionStatus == 3)
+		if (status == g_StatusMap.Idle && s.comms.connectionStatus == 3)
 		{
 			status = g_StatusMap.Run; // HACK: Grbl goes "Idle" during a G4 command, which is wrong. Double-check the connectionStatus
 		}
@@ -278,7 +280,6 @@ function HandleStatus(status)
 	{
 		// update wheel jog location on every idle
 		if (g_SafeStopPending == 1) { g_SafeStopPending = 0; }
-		g_JogCancelPendingTime = undefined;
 	}
 	else
 	{
@@ -312,15 +313,6 @@ function IsStableIdle()
 		return ((g_LastBusyTime == undefined) || (t - g_LastBusyTime >= 500)) && t - g_LastUpdateTime <= 300;
 	}
 	return false;
-}
-
-// Handles the "ok" event from the OpenBuilds-CONTROL software
-function HandleOk(command)
-{
-	if (typeof(command) == 'string' && g_JogXYState != undefined && command.startsWith("$J="))
-	{
-		UpdateJogXY();
-	}
 }
 
 // Handles the job completion event
@@ -496,15 +488,7 @@ function PushSettings(pushRomSettings)
 	if (pushRomSettings)
 	{
 		WritePort("NAME:" + g_PendantRomSettings.pendantName.substring(0, 18));
-		WritePort("CALIBRATION:"
-			+ g_PendantRomSettings.calibrationX[0] + ","
-			+ g_PendantRomSettings.calibrationX[2] + ","
-			+ g_PendantRomSettings.calibrationX[3] + ","
-			+ g_PendantRomSettings.calibrationX[1] + ","
-			+ g_PendantRomSettings.calibrationY[0] + ","
-			+ g_PendantRomSettings.calibrationY[2] + ","
-			+ g_PendantRomSettings.calibrationY[3] + ","
-			+ g_PendantRomSettings.calibrationY[1]);
+		WritePort("CALIBRATION:" + g_PendantRomSettings.calibrationX.join(',') + "," + g_PendantRomSettings.calibrationY.join(','));
 	}
 }
 
@@ -529,8 +513,7 @@ function SafeStop(force)
 // Stops the current operation as gently as possible
 function SmartStop()
 {
-	if (laststatus.comms.runStatus == "Jog" ||
-		(laststatus.comms.runStatus == "Running" && (g_JogXYLocation != undefined || g_JogWQueue != undefined || g_ProbeJog != undefined)))
+	if (laststatus.comms.runStatus == "Jog" || g_ProbeJog != undefined)
 	{
 		socket.emit('stop', {stop: false, jog: true, abort: false});
 	}
@@ -606,234 +589,12 @@ var g_LastWheelMoveTime;
 var g_ErrorListeners;
 
 // Jogging with joystick
-var g_JogXYLocation; // last known joystick jog location in MCS. always in mm
-var g_JogXYTimer;
 var g_JogJoystick = {X: 0, Y: 0}; // last received joystick position
-var g_JogCancelPendingTime = undefined; // to cancel jog on next job complete
-var g_JogXYState = undefined; // true - running, false - stopping, undefined - inactive
-var g_JogXYTime;
 
 // New jog
 var g_JogXYSettings = false;
 var g_JogXYRepeater = undefined;
 var g_JogJoystickTime = undefined;
-
-// Temporary replacement for the default 'toastError' listener, which ignores Error 8 during jogging.
-function HandleJogWError(data)
-{
-	if (data.startsWith("error: 8"))
-	{
-		socket.emit('clearAlarm', 0);
-		socket.emit('serialInject', "?");
-		printLog("ERROR 8 HANDLED");
-	}
-	else if (g_ErrorListeners != undefined)
-	{
-		for (var i = 0; i < g_ErrorListeners.length; i++)
-		{
-			g_ErrorListeners[i](data);
-		}
-	}
-}
-
-// Begins jogging with the wheel
-function BeginJogW()
-{
-	var axisL = g_JogAxis.toLowerCase();
-	g_LastBusyTime = Date.now(); // force state as busy
-	g_JogWLocation = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL];
-
-	// HACK: There is a bug in Grbl that sometimes a $J command gets into a Run state instead of Jog. The next $J
-	// will trigger Error 8, because $J is not allowed during the Run state. Here we replace the entire list of
-	// 'toastError' listeners with our own function, which ignores the error. The list will be restored in EndJogW.
-	g_ErrorListeners = Array.from(socket.listeners('toastError'));
-	socket.off('toastError');
-	socket.on('toastError', HandleJogWError);
-}
-
-// Cleanup after jogging with the wheel
-function EndJogW()
-{
-	if (g_JogWTimer != undefined)
-	{
-		clearInterval(g_JogWTimer);
-		g_JogWTimer = undefined;
-	}
-	g_JogAxis = undefined;
-	g_bJogInches = undefined;
-	g_JogWLocation = undefined;
-	g_JogWQueue = undefined;
-
-	if (g_ErrorListeners != undefined)
-	{
-		socket.off('toastError');
-		for (var i = 0; i < g_ErrorListeners.length; i++)
-		{
-			socket.on('toastError', g_ErrorListeners[i]);
-		}
-		g_ErrorListeners = undefined;
-	}
-}
-
-// Called periodically to process the queue of wheel jog requests
-function UpdateJogW()
-{
-	if (g_JogWQueue == 0 && IsStableIdle())
-	{
-		EndJogW();
-		return;
-	}
-
-	if (Date.now() - g_LastWheelMoveTime > WHEEL_JOG_STOP_TIME)
-	{
-		// wheel stopped, clear the queue
-		g_JogWQueue = 0;
-		return;
-	}
-
-	var step = Math.abs(g_JogStep) * (g_bJogInches ? 25.4 : 1); // jog step in mm
-	var feedT;
-	switch (g_JogAxis)
-	{
-		case "X": feedT = grblParams.$110; break;
-		case "Y": feedT = grblParams.$111; break;
-		case "Z": feedT = grblParams.$112; break;
-	}
-	var feed = Math.min(feedT, step * 6000); // limit feed to 100 steps per second
-
-	var maxDist = feedT * WHEEL_JOG_AHEAD_TIME / 60000; // travel distance to keep in the queue
-
-	var axisL = g_JogAxis.toLowerCase();
-	var current = laststatus.machine.position.work[axisL] + laststatus.machine.position.offset[axisL]; // current absolute position
-	var dist = Math.abs(g_JogWLocation - current);
-
-	// determine how many steps from the queue can be processed in WHEEL_JOG_AHEAD_TIME
-	var count = 0;
-	for (; count < g_JogWQueue; count++)
-	{
-		if (dist > 0.01 && dist + step > maxDist)
-		{
-			break; // have enough for WHEEL_JOG_AHEAD_TIME
-		}
-		dist += step;
-	}
-
-	if (count > 0)
-	{
-		// determine the target location
-		var absValue = g_JogWLocation;
-		if (g_bJogInches) { absValue /= 25.4; }
-
-		var delta = 0;
-		for (var i = 0; i < count; i++)
-		{
-			if (IsSafeAbsoluteMove(absValue, delta + g_JogStep, g_JogAxis, g_bJogInches))
-			{
-				delta += g_JogStep;
-			}
-			else
-			{
-				break;
-			}
-		}
-		g_JogWQueue -= count;
-
-		if (delta != 0)
-		{
-			absValue += delta;
-			// absolute move in machine space, inches or mm
-			var gcode = "$J=G90 G53 " + (g_bJogInches ? "G20 " : "G21 ") + g_JogAxis + absValue.toFixed(3) + " F" + feed.toFixed(0);
-			sendGcode(gcode);
-			g_JogWLocation = g_bJogInches ? absValue * 25.4 : absValue;
-		}
-	}
-}
-
-// Begins jogging with the joystick
-function BeginJogXY()
-{
-	g_JogXYLocation =
-	{
-		X: laststatus.machine.position.work.x + laststatus.machine.position.offset.x,
-		Y: laststatus.machine.position.work.y + laststatus.machine.position.offset.y,
-	};
-
-	g_JogXYTime = Date.now() - 200;
-	g_JogXYState = true;
-	UpdateJogXY();
-}
-
-// Queues a jog increment. dt - time duration in seconds
-// Returns true if a command was queued
-function QueueJogXY(joyX, joyY, dt)
-{
-	if (joyX == 0 && joyY == 0)
-	{
-		return false;
-	}
-	var feedX = grblParams.$110 / 60; // mm/sec
-	var feedY = grblParams.$111 / 60; // mm/sec
-	// requested move in mm
-	var newX = ClampSafeAbsoluteMove(g_JogXYLocation.X, joyX * feedX * dt / JOYSTICK_STEPS, 'X', false);
-	var newY = ClampSafeAbsoluteMove(g_JogXYLocation.Y, joyY * feedY * dt / JOYSTICK_STEPS, 'Y', false);
-	var dx = newX - g_JogXYLocation.X;
-	var dy = newY - g_JogXYLocation.Y;
-	if (dx == 0 && dy == 0)
-	{
-		return false;
-	}
-
-	var feed = (Math.sqrt(dx * dx + dy * dy) / dt) * 60;
-	// absolute machine move, mm
-	var gcode = "$J=G53 G90 G21" + " X" + newX.toFixed(3) + " Y" + newY.toFixed(3) + " F" + feed.toFixed(0);
-	sendGcode(gcode);
-	g_JogXYLocation.X = newX;
-	g_JogXYLocation.Y = newY;
-	return true;
-}
-
-// Updates the advanced jog state after "ok" event is received
-function UpdateJogXY()
-{
-	if (laststatus.comms.runStatus != "Idle" && laststatus.comms.runStatus != "Jog" && laststatus.comms.runStatus != "Running")
-	{
-		g_JogXYState = false;
-	}
-	if (g_JogXYState == true)
-	{
-		var t = Date.now();
-		var dt = (t - g_JogXYTime) / 1000;
-		g_JogXYTime = t;
-
-		if (dt > 0 && !QueueJogXY(g_JogJoystick.X, g_JogJoystick.Y, dt))
-		{
-			g_JogXYState = undefined;
-		}
-	}
-	else if (g_JogXYState == false)
-	{
-		socket.emit('stop', {stop: false, jog: true, abort: false});
-		g_JogXYState = undefined;
-	}
-}
-
-// Clears the jog XY state
-function ClearJogXY(abort)
-{
-	if (abort)
-	{
-		g_JogXYState = undefined;
-	}
-	else if (g_JogXYState == true)
-	{
-		g_JogXYState = false;
-	}
-	if (g_JogXYTimer != undefined)
-	{
-		clearInterval(g_JogXYTimer);
-		g_JogXYTimer = undefined;
-	}
-}
 
 // Handles the jog commands from the pendant
 function HandleJogCommand(command)
@@ -959,73 +720,27 @@ function HandleJogCommand(command)
 			step = -step;
 		}
 
-		if (GROOVE_CONTROL_VERSION >= 1001)
+		var speed;
+		switch (axis)
 		{
-			var speed;
-			switch (axis)
-			{
-				case "X": speed = grblParams.$110; break;
-				case "Y": speed = grblParams.$111; break;
-				case "Z": speed = grblParams.$112; break;
-			}
-			speed *= (inches ? 1/25.4 : 1);
-			const limits = GetSafeLimits(axis);
-			const params = {
-				axis: axis.toLowerCase(),
-				min: limits.min * (inches ? 1/25.4 : 1),
-				max: limits.max * (inches ? 1/25.4 : 1),
-				enableLimits: g_PendantSettings.safeLimitsEnabled,
-				units: inches ? "in" : "mm",
-				count: count,
-				step: step,
-				speed: Math.min(speed, Math.abs(step) * 6000), // limit the speed to 100 steps per second (6000 steps per minute)
-				timeout: WHEEL_JOG_STOP_TIME,
-			};
-			socket.emit('mpgJog', params);
-			return;
+			case "X": speed = grblParams.$110; break;
+			case "Y": speed = grblParams.$111; break;
+			case "Z": speed = grblParams.$112; break;
 		}
-
-		if (axis != g_JogAxis || inches != g_bJogInches)
-		{
-			// axis or unit is switched, clear everything
-			EndJogW();
-			g_JogWQueue = 0;
-			g_JogStep = step;
-			g_JogAxis = axis;
-			g_bJogInches = inches;
-		}
-		else if (step != g_JogStep)
-		{
-			// only the step has changed, just clear the queue
-			g_JogWQueue = 0;
-			g_JogStep = step;
-		}
-
-		g_JogWQueue += count;
-
-		g_LastWheelMoveTime = Date.now();
-
-		if (g_JogWTimer == undefined)
-		{
-			g_JogWLocation = undefined;
-			if (IsStableIdle())
-			{
-				BeginJogW();
-				UpdateJogW();
-			}
-			g_JogWTimer = setInterval(function()
-			{
-				if (g_JogWLocation == undefined && IsStableIdle())
-				{
-					BeginJogW();
-				}
-				if (g_JogWLocation != undefined)
-				{
-					UpdateJogW();
-				}
-			}, 100);
-		}
-
+		speed *= (inches ? 1/25.4 : 1);
+		const limits = GetSafeLimits(axis);
+		const params = {
+			axis: axis.toLowerCase(),
+			min: limits.min * (inches ? 1/25.4 : 1),
+			max: limits.max * (inches ? 1/25.4 : 1),
+			enableLimits: g_PendantSettings.safeLimitsEnabled,
+			units: inches ? "in" : "mm",
+			count: count,
+			step: step,
+			speed: Math.min(speed, Math.abs(step) * 6000), // limit the speed to 100 steps per second (6000 steps per minute)
+			timeout: WHEEL_JOG_STOP_TIME,
+		};
+		socket.emit('mpgJog', params);
 		return;
 	}
 
@@ -1033,81 +748,42 @@ function HandleJogCommand(command)
 	{
 		// joystick input
 		var xy = command.substring(3).split(',').map((x) => parseFloat(x));
-		if (GROOVE_CONTROL_VERSION >= 1001)
+		if (xy[0] != 0 || xy[1] != 0)
 		{
-			if (xy[0] != 0 || xy[1] != 0)
+			if (!g_JogXYSettings)
 			{
-				if (!g_JogXYSettings)
-				{
-					const limitsX = GetSafeLimits('X');
-					const limitsY = GetSafeLimits('Y');
-					g_JogXYSettings = {
-						minX: limitsX.min, minY: limitsY.min, minZ: 0,
-						maxX: limitsX.max, maxY: limitsY.max, maxZ: 0,
-						enableLimits: g_PendantSettings.safeLimitsEnabled,
-						speedXY: Math.min(parseFloat(grblParams.$110), parseFloat(grblParams.$111)),
-						speedZ: 0
-					};
-					g_JogXYRepeater = setInterval(function() {
-						let time = new Date().getTime();
-						if (time > g_JogJoystickTime + 100)
-						{
-							g_JogJoystickTime = time;
-							socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
-						}
-					}, 100);
-				}
-				const scale = command.startsWith("NXY") ? (g_PendantSettings.zProbe.nudgeSpeed / (100 * JOYSTICK_STEPS)) : (1 / JOYSTICK_STEPS);
-				g_JogJoystick = {X: xy[0] * scale, Y: xy[1] * scale};
-				g_JogJoystickTime = new Date().getTime();
-				socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
-			}
-			else if (g_JogXYSettings)
-			{
-				g_JogXYSettings = false;
-				if (g_JogXYRepeater)
-				{
-					clearInterval(g_JogXYRepeater);
-					g_JogXYRepeater = undefined;
-				}
-				socket.emit('analogJog', {stop: true});
-			}
-			return;
-		}
-
-		g_JogJoystick = {X: xy[0], Y: xy[1]};
-		if (command.startsWith("NXY"))
-		{
-			g_JogJoystick.X *= g_PendantSettings.zProbe.nudgeSpeed / 100;
-			g_JogJoystick.Y *= g_PendantSettings.zProbe.nudgeSpeed / 100;
-		}
-
-		if (xy[0] == 0 && xy[1] == 0)
-		{
-			// joystick is released, stop immediately
-			ClearJogXY(false);
-			return;
-		}
-
-		if (g_JogXYTimer == undefined && g_JogXYState == undefined)
-		{
-			// just begin the jog on the next stable idle. the "ok" event handler will keep the jogs coming
-			if (IsStableIdle())
-			{
-				BeginJogXY();
-			}
-			else
-			{
-				g_JogXYTimer = setInterval(function()
-				{
-					if (IsStableIdle())
+				const limitsX = GetSafeLimits('X');
+				const limitsY = GetSafeLimits('Y');
+				g_JogXYSettings = {
+					minX: limitsX.min, minY: limitsY.min, minZ: 0,
+					maxX: limitsX.max, maxY: limitsY.max, maxZ: 0,
+					enableLimits: g_PendantSettings.safeLimitsEnabled,
+					speedXY: Math.min(parseFloat(grblParams.$110), parseFloat(grblParams.$111)),
+					speedZ: 0
+				};
+				g_JogXYRepeater = setInterval(function() {
+					let time = new Date().getTime();
+					if (time > g_JogJoystickTime + 100)
 					{
-						BeginJogXY();
-						clearInterval(g_JogXYTimer);
-						g_JogXYTimer = undefined;
+						g_JogJoystickTime = time;
+						socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
 					}
 				}, 100);
 			}
+			const scale = command.startsWith("NXY") ? (g_PendantSettings.zProbe.nudgeSpeed / (100 * JOYSTICK_STEPS)) : (1 / JOYSTICK_STEPS);
+			g_JogJoystick = {X: xy[0] * scale, Y: xy[1] * scale};
+			g_JogJoystickTime = new Date().getTime();
+			socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
+		}
+		else if (g_JogXYSettings)
+		{
+			g_JogXYSettings = false;
+			if (g_JogXYRepeater)
+			{
+				clearInterval(g_JogXYRepeater);
+				g_JogXYRepeater = undefined;
+			}
+			socket.emit('analogJog', {stop: true});
 		}
 		return;
 	}
@@ -1670,14 +1346,16 @@ function PendantComHandler(data)
 		var cal = data.substring(12).split(',').map((x) => Number(x));
 
 		g_PendantRomSettings.calibrationX[0] = cal[0];
-		g_PendantRomSettings.calibrationX[2] = cal[1];
-		g_PendantRomSettings.calibrationX[3] = cal[2];
-		g_PendantRomSettings.calibrationX[1] = cal[3];
+		g_PendantRomSettings.calibrationX[1] = cal[1];
+		g_PendantRomSettings.calibrationX[2] = cal[2];
+		g_PendantRomSettings.calibrationX[3] = cal[3];
+		g_PendantRomSettings.calibrationX[4] = cal[4];
 
-		g_PendantRomSettings.calibrationY[0] = cal[4];
-		g_PendantRomSettings.calibrationY[2] = cal[5];
-		g_PendantRomSettings.calibrationY[3] = cal[6];
-		g_PendantRomSettings.calibrationY[1] = cal[7];
+		g_PendantRomSettings.calibrationY[0] = cal[5];
+		g_PendantRomSettings.calibrationY[1] = cal[6];
+		g_PendantRomSettings.calibrationY[2] = cal[7];
+		g_PendantRomSettings.calibrationY[3] = cal[8];
+		g_PendantRomSettings.calibrationY[4] = cal[9];
 
 		return;
 	}
@@ -1722,8 +1400,25 @@ function PendantComHandler(data)
 	if (data.startsWith("RAWJOY:"))
 	{
 		var xy = data.substring(7).split(',').map((x) => Number(x));
-		g_RawJoyX = xy[0];
-		g_RawJoyY = xy[1];
+		if ($('#PendantSwapXY').prop('checked'))
+		{
+			g_RawJoyX = xy[1];
+			g_RawJoyY = xy[0];
+		}
+		else
+		{
+			g_RawJoyX = xy[0];
+			g_RawJoyY = xy[1];
+		}
+		if ($('#PendantInvertX').prop('checked'))
+		{
+			g_RawJoyX = JOYSTICK_RANGE - 1 - g_RawJoyX;
+		}
+		if ($('#PendantInvertY').prop('checked'))
+		{
+			g_RawJoyY = JOYSTICK_RANGE - 1 - g_RawJoyY;
+		}
+
 		UpdateCalibration();
 		return;
 	}
@@ -1770,10 +1465,7 @@ function PendantComHandler(data)
 		if (COM_LOG_LEVEL >= 1) { console.log("#SET0#"); }
 		if (data.length >= 6 && data[5] >= 'X' && data[5] <= 'Z')
 		{
-			if (GROOVE_CONTROL_VERSION >= 1000)
-			{
-				captureWcsHistory('Before <b>Pendant Set Zero</b>');
-			}
+			captureWcsHistory('Before <b>Pendant Set Zero</b>');
 			sendGcode("G10 P0 L20 " + data[5] + "0");
 		}
 		return;
@@ -2004,10 +1696,6 @@ function TryComHandler(data)
 			socket.on('status', HandleStatus);
 			socket.on('queueCount', HandleQueueStatus);
 			socket._callbacks["$jobComplete"].splice(0,0, HandleJobComplete); // hack to inject our callback first to stop OpenBuilds from showing the job completed popup
-			if (GROOVE_CONTROL_VERSION < 1001)
-			{
-				socket.on('ok', HandleOk);
-			}
 
 			g_CurrentTryPort = undefined;
 			g_CurrentTryParser = undefined;
@@ -2132,7 +1820,6 @@ window.DisconnectPendant = function()
 	socket.off('status', HandleStatus);
 	socket.off('queueCount', HandleQueueStatus);
 	socket.off('jobComplete', HandleJobComplete);
-	socket.off('ok', HandleOk);
 	socket.off('prbResult');
 }
 
@@ -2142,7 +1829,7 @@ window.DisconnectPendant = function()
 // timer to refresh the calibration graphics
 var g_CalibrationTimer;
 
-// last raw joystick values [0..1023]
+// last raw joystick values [0.JOYSTICK_RANGE-1]
 var g_RawJoyX;
 var g_RawJoyY;
 
@@ -2160,18 +1847,29 @@ var g_CalibrationStage;
 // Returns the calibration settings from the dialog for a specified axis (either 'X' or 'Y')
 function ParseJoystickSettings(axis)
 {
+	var flags = 0;
+
+	if ($('#PendantSwapXY').prop('checked'))
+	{
+		flags += 2;
+	}
+	if ($('#PendantInvert' + axis).prop('checked'))
+	{
+		flags += 1;
+	}
+
 	var min = $('#PendantJoyMin' + axis).val();
-	min = Math.min(Math.max(min, 0), 1023);
+	min = Math.min(Math.max(min, 0), JOYSTICK_RANGE-1);
 
 	var max = $('#PendantJoyMax' + axis).val();
-	max = Math.min(Math.max(max, min), 1023);
+	max = Math.min(Math.max(max, min), JOYSTICK_RANGE-1);
 
 	var centerMin = $('#PendantJoyCenterMin' + axis).val();
 	var centerMax = $('#PendantJoyCenterMax' + axis).val();
 	centerMin = Math.min(Math.max(centerMin, min), max);
 	centerMax = Math.min(Math.max(centerMax, centerMin), max);
 
-	return [min, max, centerMin, centerMax];
+	return [flags, min, centerMin, centerMax, max];
 }
 
 // Reads settings from the dialog input fields
@@ -2179,6 +1877,39 @@ window.RefreshJoystickSettings = function()
 {
 	g_JoySetX = ParseJoystickSettings('X');
 	g_JoySetY = ParseJoystickSettings('Y');
+}
+
+window.PendantSwapXY = function()
+{
+	$('#PendantJoyMinX').val(g_JoySetY[1]);
+	$('#PendantJoyMaxX').val(g_JoySetY[4]);
+	$('#PendantJoyCenterMinX').val(g_JoySetY[2]);
+	$('#PendantJoyCenterMaxX').val(g_JoySetY[3]);
+	$('#PendantJoyMinY').val(g_JoySetX[1]);
+	$('#PendantJoyMaxY').val(g_JoySetX[4]);
+	$('#PendantJoyCenterMinY').val(g_JoySetX[2]);
+	$('#PendantJoyCenterMaxY').val(g_JoySetX[3]);
+	$('#PendantInvertX').prop('checked', (g_JoySetY[0]&1) == 1);
+	$('#PendantInvertY').prop('checked', (g_JoySetX[0]&1) == 1);
+	RefreshJoystickSettings();
+}
+
+window.PendantInvertX = function()
+{
+	$('#PendantJoyMinX').val(JOYSTICK_RANGE - 1 - g_JoySetX[4]);
+	$('#PendantJoyMaxX').val(JOYSTICK_RANGE - 1 - g_JoySetX[1]);
+	$('#PendantJoyCenterMinX').val(JOYSTICK_RANGE - 1 - g_JoySetX[3]);
+	$('#PendantJoyCenterMaxX').val(JOYSTICK_RANGE - 1 - g_JoySetX[2]);
+	RefreshJoystickSettings();
+}
+
+window.PendantInvertY = function()
+{
+	$('#PendantJoyMinY').val(JOYSTICK_RANGE - 1 - g_JoySetY[4]);
+	$('#PendantJoyMaxY').val(JOYSTICK_RANGE - 1 - g_JoySetY[1]);
+	$('#PendantJoyCenterMinY').val(JOYSTICK_RANGE - 1 - g_JoySetY[3]);
+	$('#PendantJoyCenterMaxY').val(JOYSTICK_RANGE - 1 - g_JoySetY[2]);
+	RefreshJoystickSettings();
 }
 
 // Starts reading the joystick from the pendant and update the graphics
@@ -2209,12 +1940,12 @@ function StartJoystick()
 		var setY = g_CalibrationStage != undefined ? g_JoyCalY : g_JoySetY;
 
 		calibrateCtx.lineWidth = 1;
-		if (setX[0] <= setX[1])
+		if (setX[1] <= setX[4])
 		{
-			var x1 = centerX + ((setX[0]-512)*Scale)/512 + 1;
-			var x2 = centerX + ((setX[1]-512)*Scale)/512 + 1;
-			var y1 = centerY - ((setY[0]-512)*Scale)/512 + 1;
-			var y2 = centerY - ((setY[1]-512)*Scale)/512 + 1;
+			var x1 = centerX + ((setX[1]-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
+			var x2 = centerX + ((setX[4]-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
+			var y1 = centerY - ((setY[1]-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
+			var y2 = centerY - ((setY[4]-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
 			calibrateCtx.beginPath();
 			calibrateCtx.strokeStyle = "#00BF00";
 			calibrateCtx.rect(x1, y1, x2-x1, y2-y1);
@@ -2223,10 +1954,10 @@ function StartJoystick()
 
 		if (setX[2] <= setX[3])
 		{
-			var x1 = centerX + ((setX[2]-512)*Scale)/512 + 1;
-			var x2 = centerX + ((setX[3]-512)*Scale)/512 + 1;
-			var y1 = centerY - ((setY[2]-512)*Scale)/512 + 1;
-			var y2 = centerY - ((setY[3]-512)*Scale)/512 + 1;
+			var x1 = centerX + ((setX[2]-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
+			var x2 = centerX + ((setX[3]-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
+			var y1 = centerY - ((setY[2]-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
+			var y2 = centerY - ((setY[3]-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
 
 			calibrateCtx.beginPath();
 			calibrateCtx.strokeStyle = "#BF0000";
@@ -2237,8 +1968,8 @@ function StartJoystick()
 		if (g_RawJoyX != undefined && g_RawJoyY != undefined)
 		{
 			calibrateCoords.innerHTML = "X: " + g_RawJoyX + ", Y: " + g_RawJoyY;
-			var x = centerX + ((g_RawJoyX-512)*Scale)/512 + 1;
-			var y = centerY - ((g_RawJoyY-512)*Scale)/512 + 1;
+			var x = centerX + ((g_RawJoyX-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
+			var y = centerY - ((g_RawJoyY-JOYSTICK_HALF)*Scale)/JOYSTICK_HALF + 1;
 			calibrateCtx.lineWidth = 2;
 			calibrateCtx.beginPath();
 			calibrateCtx.strokeStyle = "#000000";
@@ -2273,9 +2004,12 @@ window.StartCalibration = function()
 	$('#PendantCalibrate').hide();
 	$('#PendantCalibrateCancel').show();
 	WritePort("CAL:STARTC");
-	g_JoyCalX = [1024, -1, 1024, -1];
-	g_JoyCalY = [1024, -1, 1024, -1];
+	g_JoyCalX = [g_JoySetX[0], JOYSTICK_RANGE-1, JOYSTICK_RANGE-1, -1, -1];
+	g_JoyCalY = [g_JoySetY[0], JOYSTICK_RANGE-1, JOYSTICK_RANGE-1, -1, -1];
 	SetCalibrationStage(0);
+	$('#PendantSwapXY').prop('disabled', true);
+	$('#PendantInvertX').prop('disabled', true);
+	$('#PendantInvertY').prop('disabled', true);
 }
 
 // Cancels the calibration process. external is true if the request comes from the pendant
@@ -2292,6 +2026,9 @@ window.CancelCalibration = function(external)
 			WritePort("CAL:STOPC"); // no need to stop the pendant if the request came from it
 		}
 	}
+	$('#PendantSwapXY').prop('disabled', false);
+	$('#PendantInvertX').prop('disabled', false);
+	$('#PendantInvertY').prop('disabled', false);
 }
 
 // Sets the current calibration stage: 0 - detect range, 1..8 - detect cener, 9 - completes the calibration
@@ -2321,20 +2058,20 @@ function SetCalibrationStage(stage)
 		g_CalibrationStage = undefined;
 
 		g_JoySetX = g_JoyCalX;
-		$('#PendantJoyMinX').val(g_JoyCalX[0]);
-		$('#PendantJoyMaxX').val(g_JoyCalX[1]);
-		var centerMin = Math.floor((g_JoyCalX[0]*1 + g_JoyCalX[2]*9) / 10);
-		var centerMax = Math.ceil((g_JoyCalX[1]*1 + g_JoyCalX[3]*9) / 10);
+		$('#PendantJoyMinX').val(g_JoyCalX[1]);
+		$('#PendantJoyMaxX').val(g_JoyCalX[4]);
+		var centerMin = Math.floor((g_JoyCalX[1]*1 + g_JoyCalX[2]*9) / 10);
+		var centerMax = Math.ceil((g_JoyCalX[4]*1 + g_JoyCalX[3]*9) / 10);
 		g_JoySetX[2] = centerMin;
 		g_JoySetX[3] = centerMax;
 		$('#PendantJoyCenterMinX').val(centerMin);
 		$('#PendantJoyCenterMaxX').val(centerMax);
 
 		g_JoySetY = g_JoyCalY;
-		$('#PendantJoyMinY').val(g_JoyCalY[0]);
-		$('#PendantJoyMaxY').val(g_JoyCalY[1]);
-		var centerMin = Math.floor((g_JoyCalY[0]*1 + g_JoyCalY[2]*9) / 10);
-		var centerMax = Math.ceil((g_JoyCalY[1]*1 + g_JoyCalY[3]*9) / 10);
+		$('#PendantJoyMinY').val(g_JoyCalY[1]);
+		$('#PendantJoyMaxY').val(g_JoyCalY[4]);
+		var centerMin = Math.floor((g_JoyCalY[1]*1 + g_JoyCalY[2]*9) / 10);
+		var centerMax = Math.ceil((g_JoyCalY[4]*1 + g_JoyCalY[3]*9) / 10);
 		g_JoySetY[2] = centerMin;
 		g_JoySetY[3] = centerMax;
 		$('#PendantJoyCenterMinY').val(centerMin);
@@ -2347,10 +2084,10 @@ function UpdateCalibration()
 {
 	if (g_CalibrationStage == 0)
 	{
-		g_JoyCalX[0] = Math.min(g_JoyCalX[0], g_RawJoyX);
-		g_JoyCalX[1] = Math.max(g_JoyCalX[1], g_RawJoyX);
-		g_JoyCalY[0] = Math.min(g_JoyCalY[0], g_RawJoyY);
-		g_JoyCalY[1] = Math.max(g_JoyCalY[1], g_RawJoyY);
+		g_JoyCalX[1] = Math.min(g_JoyCalX[1], g_RawJoyX);
+		g_JoyCalX[4] = Math.max(g_JoyCalX[4], g_RawJoyX);
+		g_JoyCalY[1] = Math.min(g_JoyCalY[1], g_RawJoyY);
+		g_JoyCalY[4] = Math.max(g_JoyCalY[4], g_RawJoyY);
 	}
 }
 
@@ -2741,10 +2478,15 @@ button to begin the calibration process, which will determine the range of motio
 You can also enter the values manually.</p>
 
 <div id="PendantTab52" class="row mb-3 mt-5">
+  <div class="cell-sm-3 pt-3" style="display:flex; flex-direction:column;">
+    <input id="PendantSwapXY" type="checkbox" data-role="checkbox" data-style="2" data-caption="Swap X/Y" onclick="PendantSwapXY()" />
+    <input id="PendantInvertX" type="checkbox" data-role="checkbox" data-style="2" data-caption="Invert X" onclick="PendantInvertX()" />
+    <input id="PendantInvertY" type="checkbox" data-role="checkbox" data-style="2" data-caption="Invert Y" onclick="PendantInvertY()" />
+  </div>
   <div class="cell-sm-4">
     <canvas id="PendantCalCanvas" width="220" height="220" />
     <br/>
-    <p id="PendantCalCoords">X:1023, Y:1023</p>
+    <p id="PendantCalCoords">X:` + (JOYSTICK_RANGE-1) + `, Y:` + (JOYSTICK_RANGE-1) + `</p>
   </div>
   <div class="cell-sm-4">
     <button id="PendantCalibrate" class="button success" onclick="StartCalibration();">Start Calibration</button>
@@ -2824,7 +2566,7 @@ window.SelectSettingsTab = function(index)
 	$('#PendantTab11,#PendantTab12,#PendantTab13,#PendantTab16,#PendantTab17,#PendantTab18,#PendantTab19,#PendantTab110,#PendantTab111').toggle(tab1);
 
 	var safeLimitsDisabled = !$('#PendantSafeLimits').prop('checked');
-	var useSystemLimits = GROOVE_CONTROL_VERSION > 0 && $('#PendantSystemLimits').prop('checked');
+	var useSystemLimits = $('#PendantSystemLimits').prop('checked');
 	$('#PendantSystemLimits').prop('disabled', safeLimitsDisabled);
 	$('#PendantResetSafeLimits,#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled || useSystemLimits);
 
@@ -2893,7 +2635,7 @@ function GetSettingsSafeLimits(settings, axis)
 
 function GetSafeLimits(axis)
 {
-	if (GROOVE_CONTROL_VERSION > 0 && g_PendantSettings.useSystemLimits)
+	if (g_PendantSettings.useSystemLimits)
 	{
 		const limits = computeMachineLimits(1);
 		return {min: limits["min" + axis], max: limits["max" + axis]};
@@ -3002,7 +2744,6 @@ function UpdateSettingsControls(settings, romSettings)
 
 	$('#PendantSafeLimits').prop('checked', settings.safeLimitsEnabled);
 	$('#PendantSystemLimits').prop('checked', settings.useSystemLimits);
-	$('#PendantSystemLimits').parent().toggle(GROOVE_CONTROL_VERSION > 0);
 
 	var limits = GetSettingsSafeLimits(settings, 'X');
 	$('#PendantMinX').val(limits.min);
@@ -3108,12 +2849,17 @@ function UpdateSettingsControls(settings, romSettings)
 	if (romSettings)
 	{
 		$('#PendantName').val(romSettings.pendantName);
-		$('#PendantJoyMinX').val(romSettings.calibrationX[0]);
-		$('#PendantJoyMaxX').val(romSettings.calibrationX[1]);
+		$('#PendantSwapXY').prop('checked', (romSettings.calibrationX[0]&2) == 2);
+
+		$('#PendantInvertX').prop('checked', (romSettings.calibrationX[0]&1) == 1);
+		$('#PendantJoyMinX').val(romSettings.calibrationX[1]);
+		$('#PendantJoyMaxX').val(romSettings.calibrationX[4]);
 		$('#PendantJoyCenterMinX').val(romSettings.calibrationX[2]);
 		$('#PendantJoyCenterMaxX').val(romSettings.calibrationX[3]);
-		$('#PendantJoyMinY').val(romSettings.calibrationY[0]);
-		$('#PendantJoyMaxY').val(romSettings.calibrationY[1]);
+
+		$('#PendantInvertY').prop('checked', (romSettings.calibrationY[0]&1) == 1);
+		$('#PendantJoyMinY').val(romSettings.calibrationY[1]);
+		$('#PendantJoyMaxY').val(romSettings.calibrationY[4]);
 		$('#PendantJoyCenterMinY').val(romSettings.calibrationY[2]);
 		$('#PendantJoyCenterMaxY').val(romSettings.calibrationY[3]);
 	}
