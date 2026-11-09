@@ -192,7 +192,14 @@ void ZProbeScreen::Update( unsigned long time )
 		CancelJog();
 	}
 
-	if (pState->m_ProbeMode != PROBE_Z)
+	if (pState->m_ProbeMode == PROBE_Z)
+	{
+		if (g_bProbeContact)
+		{
+			pState->m_bConfirmed = true;
+		}
+	}
+	else
 	{
 		pState->m_bConfirmed = (g_ProbeState & PROBE_TLO_IN_POSITION) != 0;
 	}
