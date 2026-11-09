@@ -113,19 +113,22 @@ void RunScreen::Draw( void )
 	if (bDrawX)
 	{
 		DrawText(0, 1, g_StrX);
-		PrintCoord(g_TextBuf, g_WorkX); DrawText(2, 1, g_TextBuf);
+		int8_t len = PrintCoord(g_TextBuf, g_WorkX);
+		DrawText(len > 8 ? 1 : 2, 1, g_TextBuf);
 	}
 
 	if (bDrawY)
 	{
-		PrintCoord(g_TextBuf, g_WorkY); DrawText(2, 2, g_TextBuf);
 		DrawText(0, 2, g_StrY);
+		int8_t len = PrintCoord(g_TextBuf, g_WorkY);
+		DrawText(len > 8 ? 1 : 2, 2, g_TextBuf);
 	}
 
 	if (bDrawZ)
 	{
-		PrintCoord(g_TextBuf, g_WorkZ); DrawText(2, 3, g_TextBuf);
 		DrawText(0, 3, g_StrZ);
+		int8_t len = PrintCoord(g_TextBuf, g_WorkZ);
+		DrawText(len > 8 ? 1 : 2, 3, g_TextBuf);
 	}
 
 	if (bDrawFS)

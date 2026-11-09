@@ -125,7 +125,7 @@ void JogScreen::Draw( void )
 
 	if (bDrawX)
 	{
-		PrintX(g_TextBuf);
+		int8_t len = PrintX(g_TextBuf);
 		if (pState->m_Axis & 1)
 		{
 			SetDrawColor(1);
@@ -133,19 +133,19 @@ void JogScreen::Draw( void )
 			SetDrawColor(0);
 			DrawText(0, 1, g_StrBoldX);
 			SetDrawColor(1);
-			DrawTextBold(2, 1, g_TextBuf);
+			DrawTextBold(len > 8 ? 1 : 2, 1, g_TextBuf);
 		}
 		else
 		{
 			SetDrawColor(1);
 			DrawText(0, 1, g_StrX);
-			DrawText(2, 1, g_TextBuf);
+			DrawText(len > 8 ? 1 : 2, 1, g_TextBuf);
 		}
 	}
 
 	if (bDrawY)
 	{
-		PrintY(g_TextBuf);
+		int8_t len = PrintY(g_TextBuf);
 		if (pState->m_Axis & 2)
 		{
 			SetDrawColor(1);
@@ -153,13 +153,13 @@ void JogScreen::Draw( void )
 			SetDrawColor(0);
 			DrawText(0, 2, g_StrBoldY);
 			SetDrawColor(1);
-			DrawTextBold(2, 2, g_TextBuf);
+			DrawTextBold(len > 8 ? 1 : 2, 2, g_TextBuf);
 		}
 		else
 		{
 			SetDrawColor(1);
 			DrawText(0, 2, g_StrY);
-			DrawText(2, 2, g_TextBuf);
+			DrawText(len > 8 ? 1 : 2, 2, g_TextBuf);
 		}
 	}
 
@@ -171,7 +171,7 @@ void JogScreen::Draw( void )
 		}
 		else
 		{
-			PrintZ(g_TextBuf);
+			int8_t len = PrintZ(g_TextBuf);
 			if (pState->m_Axis & 4)
 			{
 				SetDrawColor(1);
@@ -179,13 +179,13 @@ void JogScreen::Draw( void )
 				SetDrawColor(0);
 				DrawText(0, 3, g_StrBoldZ);
 				SetDrawColor(1);
-				DrawTextBold(2, 3, g_TextBuf);
+				DrawTextBold(len > 8 ? 1 : 2, 3, g_TextBuf);
 			}
 			else
 			{
 				SetDrawColor(1);
 				DrawText(0, 3, g_StrZ);
-				DrawText(2, 3, g_TextBuf);
+				DrawText(len > 8 ? 1 : 2, 3, g_TextBuf);
 			}
 		}
 	}

@@ -35,12 +35,12 @@ protected:
 	static int8_t GetCurrentButton( void );
 
 	// Prints a value to the buffer, using the curren mm/inch setting
-	static void PrintCoord( char *buf, float val );
+	static int8_t PrintCoord( char *buf, float val );
 
 	// Print X/Y/Z to the buffer. Uses the current WCS/MCS and mm/inch settings
-	static void PrintX( char *buf );
-	static void PrintY( char *buf );
-	static void PrintZ( char *buf );
+	static int8_t PrintX( char *buf );
+	static int8_t PrintY( char *buf );
+	static int8_t PrintZ( char *buf );
 
 	// Draws the status line at the top of the screen
 #if DRAW_SCREEN_TITLE
@@ -162,7 +162,7 @@ int8_t BaseScreen::GetCurrentButton( void )
 	return -1;
 }
 
-void BaseScreen::PrintCoord( char *buf, float val )
+int8_t BaseScreen::PrintCoord( char *buf, float val )
 {
 	if (g_bShowInches)
 	{
@@ -175,21 +175,22 @@ void BaseScreen::PrintCoord( char *buf, float val )
 		if (val < 0 && val > -0.005) val = 0;
 		dtostrf(val, 8, 2, buf);
 	}
+	return (int8_t)Strlen(buf);
 }
 
-void BaseScreen::PrintX( char *buf )
+int8_t BaseScreen::PrintX( char *buf )
 {
-	PrintCoord(buf, g_bWorkSpace ? g_WorkX : (g_WorkX + g_OffsetX));
+	return PrintCoord(buf, g_bWorkSpace ? g_WorkX : (g_WorkX + g_OffsetX));
 }
 
-void BaseScreen::PrintY( char *buf )
+int8_t BaseScreen::PrintY( char *buf )
 {
-	PrintCoord(buf, g_bWorkSpace ? g_WorkY : (g_WorkY + g_OffsetY));
+	return PrintCoord(buf, g_bWorkSpace ? g_WorkY : (g_WorkY + g_OffsetY));
 }
 
-void BaseScreen::PrintZ( char *buf )
+int8_t BaseScreen::PrintZ( char *buf )
 {
-	PrintCoord(buf, g_bWorkSpace ? g_WorkZ : (g_WorkZ + g_OffsetZ));
+	return PrintCoord(buf, g_bWorkSpace ? g_WorkZ : (g_WorkZ + g_OffsetZ));
 }
 
 #if DRAW_SCREEN_TITLE

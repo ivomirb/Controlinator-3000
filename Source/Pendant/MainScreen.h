@@ -63,18 +63,18 @@ void MainScreen::Draw( void )
 	SetDrawColor(1);
 	if (bDrawX)
 	{
-		PrintX(g_TextBuf);
-		DrawText(2, 1, g_TextBuf);
+		int8_t len = PrintX(g_TextBuf);
+		DrawText(len > 8 ? 1 : 2, 1, g_TextBuf);
 	}
 	if (bDrawY)
 	{
-		PrintY(g_TextBuf);
-		DrawText(2, 2, g_TextBuf);
+		int8_t len = PrintY(g_TextBuf);
+		DrawText(len > 8 ? 1 : 2, 2, g_TextBuf);
 	}
 	if (bDrawZ)
 	{
-		PrintZ(g_TextBuf);
-		DrawText(2, 3, g_TextBuf);
+		int8_t len = PrintZ(g_TextBuf);
+		DrawText(len > 8 ? 1 : 2, 3, g_TextBuf);
 	}
 }
 
