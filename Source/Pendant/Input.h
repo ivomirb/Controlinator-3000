@@ -3,13 +3,8 @@
 const uint8_t BUTTON_JOYSTICK = 8;
 const uint8_t BUTTON_ABORT = 9;
 
-#if JOYSTICK_BITS == 10
-#define JOYSTICK_RANGE 1024
-#define JOYSTICK_HALF 512
-#elif JOYSTICK_BITS == 14
-#define JOYSTICK_RANGE 16384
-#define JOYSTICK_HALF 8192
-#endif
+const uint16_t JOYSTICK_RANGE = 1 << JOYSTICK_BITS;
+const uint16_t JOYSTICK_HALF = 1 << (JOYSTICK_BITS-1);
 
 const int32_t JOYSTICK_STEPS = 1000; // number of steps in the joystick range
 

@@ -1,5 +1,5 @@
 const int WHEEL_UPDATE_TIME = 100; // don't send wheel updates more than once every 100ms
-const int JOYSTICK_UPDATE_TIME = 100; // don't send joystick updates more than once every 100ms
+const int JOYSTICK_UPDATE_TIME = 10; // don't send joystick updates more than once every 10ms
 
 const char g_AxisName[5] = {' ', 'X', 'Y', ' ', 'Z'};
 
@@ -360,8 +360,11 @@ void JogScreen::Update( unsigned long time )
 	else if (pState->m_Axis == 3)
 	{
 		// XY jogging
-		int16_t x, y;
-		GetJoystick(&x, &y);
+		int16_t x = 0, y = 0;
+		if (!g_CalibrationScreen.ShouldSendXY())
+		{
+			GetJoystick(&x, &y);
+		}
 		if (x != 0 || y != 0)
 		{
 			pState->m_LastInputTime = time;

@@ -17,9 +17,6 @@ const SAFE_PROBE_JOG = true;
 // The step size for changing the feed or speed override. Smaller number allows for more precise control
 const WHEEL_OVERRIDE_STEP = 5; // 5% per click
 
-// This value controls how much travel time to submit to Grbl ahead of time. Longer value makes the jog smoother, but less responsive.
-const WHEEL_JOG_AHEAD_TIME = 600; // up to 600ms of jog time submitted to Grbl
-
 // This value controls how long after you stop turning the wheel the jog will stop. Smaller number will make the stop
 // more responsive and prevent long runaway jog movements. It comes at the expense of lost clicks of the wheel.
 // To avoid losing any clicks (the machine will move the exact number of clicks), use a very large number like 100000.
@@ -28,12 +25,12 @@ const WHEEL_JOG_STOP_TIME = 500; // 500ms seems like a good value
 
 // These must match Main.h
 const PENDANT_VERSION = "2.0";
-const PENDANT_BAUD_RATE = 38400;
+const PENDANT_BAUD_RATE = 115200;
 
 // Must match Config.h
 const JOYSTICK_BITS = 14; // or 10
-const JOYSTICK_RANGE = JOYSTICK_BITS == 14 ? 16384 : 1024;
-const JOYSTICK_HALF = JOYSTICK_BITS == 14 ? 8192 : 512;
+const JOYSTICK_RANGE = 1 << JOYSTICK_BITS;
+const JOYSTICK_HALF = 1 << (JOYSTICK_BITS-1);
 
 // Must match Input.h
 const JOYSTICK_STEPS = 1000;
@@ -76,10 +73,6 @@ var g_TloRefZ = undefined; // absolute Z of the tool probe measured with the ref
 var g_ProbeZDownFeed = 50; // feed rate for the Z Down button (in % of $112)
 var g_ProbeJog; // -1 - up, 1 - down
 var g_LastProbeZ;
-
-var g_SafeStopPending = 0; // 0 - ignore, 1 - clear on idle, 2 - don't clear on idle
-var g_LastBusyTime = undefined;
-var g_LastUpdateTime = undefined;
 
 // This table must match the names and order in MachineStatus.h
 const g_StatusMap =
@@ -275,22 +268,6 @@ function PushStatus(status)
 function HandleStatus(status)
 {
 	g_StatusCounter++;
-	g_LastUpdateTime = Date.now();
-	if (status.comms.runStatus == "Idle")
-	{
-		// update wheel jog location on every idle
-		if (g_SafeStopPending == 1) { g_SafeStopPending = 0; }
-	}
-	else
-	{
-		g_LastBusyTime = Date.now();
-		if (g_SafeStopPending != 0 && status.comms.runStatus == "Hold:0")
-		{
-			socket.emit('stop', {stop: true, jog: false, abort: false});
-			g_SafeStopPending = 0;
-		}
-	}
-
 	// send to pendant
 	PushStatus(status);
 }
@@ -302,17 +279,6 @@ function HandleQueueStatus(data)
 	var total = data[1]
 	var done = total - left;
 	g_JobProgress = done / total * 100;
-}
-
-// Returns true if the machine was idle for at least 500ms, and the last status update was no more than 300ms ago
-function IsStableIdle()
-{
-	if (g_LastUpdateTime != undefined)
-	{
-		var t = Date.now();
-		return ((g_LastBusyTime == undefined) || (t - g_LastBusyTime >= 500)) && t - g_LastUpdateTime <= 300;
-	}
-	return false;
 }
 
 // Handles the job completion event
@@ -492,43 +458,6 @@ function PushSettings(pushRomSettings)
 	}
 }
 
-// Issues feed hold, and then soft reset once Hold:0 is reached
-function SafeStop(force)
-{
-	if (force || !IsStableIdle())
-	{
-		if (laststatus.comms.runStatus == "Hold:0" || laststatus.comms.runStatus == "Door:0")
-		{
-			socket.emit('stop', {stop: true, jog: false, abort: false});
-			g_SafeStopPending = 0;
-		}
-		else
-		{
-			socket.emit('serialInject', '!'); // feed hold
-			g_SafeStopPending = (force || laststatus.comms.runStatus == "Idle") ? 2 : 1;
-		}
-	}
-}
-
-// Stops the current operation as gently as possible
-function SmartStop()
-{
-	if (laststatus.comms.runStatus == "Jog" || g_ProbeJog != undefined)
-	{
-		socket.emit('stop', {stop: false, jog: true, abort: false});
-	}
-	else if (laststatus.comms.runStatus == "Run" || g_ProbeJog != undefined)
-	{
-		// pause, wait for hold0, then stop
-		SafeStop(g_ProbeJog == -1);
-	}
-	else
-	{
-		// immediate abort in all other cases
-		socket.emit('stop', {stop: false, jog: false, abort: true});
-	}
-}
-
 // Returns true if value + delta is within the safe area
 function IsSafeAbsoluteMove(value, delta, axis, bInches)
 {
@@ -590,11 +519,22 @@ var g_ErrorListeners;
 
 // Jogging with joystick
 var g_JogJoystick = {X: 0, Y: 0}; // last received joystick position
-
-// New jog
 var g_JogXYSettings = false;
-var g_JogXYRepeater = undefined;
-var g_JogJoystickTime = undefined;
+
+function TickJogXY()
+{
+	if (g_JogXYSettings)
+	{
+		socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
+		requestAnimationFrame(TickJogXY);
+	}
+}
+
+function ClearJogXY()
+{
+	g_JogXYSettings = false;
+	socket.emit('analogJog', {stop: true});
+}
 
 // Handles the jog commands from the pendant
 function HandleJogCommand(command)
@@ -759,30 +699,20 @@ function HandleJogCommand(command)
 					maxX: limitsX.max, maxY: limitsY.max, maxZ: 0,
 					enableLimits: g_PendantSettings.safeLimitsEnabled,
 					speedXY: Math.min(parseFloat(grblParams.$110), parseFloat(grblParams.$111)),
-					speedZ: 0
+					speedZ: 0,
+					scale: command.startsWith("NXY") ? (g_PendantSettings.zProbe.nudgeSpeed / (100 * JOYSTICK_STEPS)) : (1 / JOYSTICK_STEPS)
 				};
-				g_JogXYRepeater = setInterval(function() {
-					let time = new Date().getTime();
-					if (time > g_JogJoystickTime + 100)
-					{
-						g_JogJoystickTime = time;
-						socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
-					}
-				}, 100);
+				g_JogJoystick = {X: xy[0] * g_JogXYSettings.scale, Y: xy[1] * g_JogXYSettings.scale};
+				TickJogXY();
 			}
-			const scale = command.startsWith("NXY") ? (g_PendantSettings.zProbe.nudgeSpeed / (100 * JOYSTICK_STEPS)) : (1 / JOYSTICK_STEPS);
-			g_JogJoystick = {X: xy[0] * scale, Y: xy[1] * scale};
-			g_JogJoystickTime = new Date().getTime();
-			socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
+			else
+			{
+				g_JogJoystick = {X: xy[0] * g_JogXYSettings.scale, Y: xy[1] * g_JogXYSettings.scale};
+			}
 		}
 		else if (g_JogXYSettings)
 		{
 			g_JogXYSettings = false;
-			if (g_JogXYRepeater)
-			{
-				clearInterval(g_JogXYRepeater);
-				g_JogXYRepeater = undefined;
-			}
 			socket.emit('analogJog', {stop: true});
 		}
 		return;
@@ -862,7 +792,7 @@ function HandleJobCommand(command)
 	}
 	else if (command == "STOP")
 	{
-		SafeStop(true);
+		socket.emit('stop', 'stop');
 		printLog("Pendant: Stop job");
 	}
 }
@@ -1078,14 +1008,7 @@ function HandleProbeCommand(command)
 	{
 		if (g_ProbeJog != undefined)
 		{
-			if (SAFE_PROBE_JOG)
-			{
-				SmartStop();
-			}
-			else
-			{
-				socket.emit('stop', {stop: false, jog: true, abort: false});
-			}
+			socket.emit('stop', SAFE_PROBE_JOG ? 'stop' : 'jog');
 			g_ProbeJog = undefined;
 		}
 	}
@@ -1442,15 +1365,15 @@ function PendantComHandler(data)
 
 	if (data == "STOP")
 	{
-		SmartStop();
-		ClearJogXY(true);
+		socket.emit('stop', 'smart');
+		ClearJogXY();
 		return;
 	}
 
 	if (data == "ABORT")
 	{
-		socket.emit('stop', {stop: false, jog: false, abort: true});
-		ClearJogXY(true);
+		socket.emit('stop', 'abort');
+		ClearJogXY();
 		return;
 	}
 
@@ -1775,17 +1698,18 @@ function TryNextPort()
 	}
 }
 
+function ReloadHandler()
+{
+	DisconnectPendant();
+	return 100;
+}
+
 // Initiates the connection to the pendant
 window.ConnectPendant = function()
 {
 	if (!g_PendantPort)
 	{
-/*		var version = laststatus.driver.version.split('.')[2];
-		if (version == undefined || version < 371)
-		{
-			printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>The pendant requires OpenBuilds v1.0.371 or later</span>")
-			return;
-		}*/
+		addReloadHandler(ReloadHandler);
 		$('#ConnectPendant').addClass('disabled');
 		$('#DisconnectPendant').addClass('disabled');
 		printLog("<span class='fg-darkRed'>[ pendant ] </span><span class='fg-blue'>Looking for pendant...</span>")
@@ -1814,6 +1738,7 @@ window.DisconnectPendant = function()
 		g_SerialQueue = [];
 		g_bSerialPending = false;
 		$('#ConnectPendant').removeClass('disabled');
+		removeReloadHandler(ReloadHandler);
 	}
 	$('#pendant > span.icon > span > svg > path').attr('fill', 'silver');
 	$('#DisconnectPendant').addClass('disabled');
