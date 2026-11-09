@@ -73,6 +73,7 @@ var g_TloRefZ = undefined; // absolute Z of the tool probe measured with the ref
 var g_ProbeZDownFeed = 50; // feed rate for the Z Down button (in % of $112)
 var g_ProbeJog; // -1 - up, 1 - down
 var g_LastProbeZ;
+var g_IgnoreAlarm = false;
 
 // This table must match the names and order in MachineStatus.h
 const g_StatusMap =
@@ -191,6 +192,10 @@ function GenerateStatusString(s)
 		{
 			status = g_StatusMap.Run; // HACK: Grbl goes "Idle" during a G4 command, which is wrong. Double-check the connectionStatus
 		}
+	}
+	if (status == g_StatusMap.Alarm && g_IgnoreAlarm)
+	{
+		status = g_StatusMap.Idle;
 	}
 	if (status == undefined)
 	{
@@ -839,6 +844,22 @@ function SetupProbeMode(probeType)
 	});
 }
 
+function probeReportCallbackAlt(success, report)
+{
+	if (!success && report.alarm[0] == '5')
+	{
+		socket.emit('clearAlarm', 1);
+		g_IgnoreAlarm = true;
+		setTimeout(() => { g_IgnoreAlarm = false; }, 1000);
+	}
+	ShowPendantDialog({
+		title: success ? "Probe Complete" : "Probe Failed",
+		text: [
+			"Disconnect probe"],
+		rButton: ["OK"],
+	});
+}
+
 // Handles a successful probe job
 function HandleProbeJobComplete(probeType, probeZ)
 {
@@ -1033,7 +1054,10 @@ function HandleProbeCommand(command)
 		{
 			if (Metro.dialog.isOpen('#xyzProbeWindow'))
 			{
+				var probeReportCallbackOld = window.probeReportCallback; // temporarily replace the callback for the next runProbeNew
+				window.probeReportCallback = probeReportCallbackAlt;
 				runProbeNew();
+				window.probeReportCallback = probeReportCallbackOld;
 				Metro.dialog.close('#xyzProbeWindow');
 				return;
 			}
