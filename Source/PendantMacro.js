@@ -704,17 +704,11 @@ function HandleJogCommand(command)
 			}
 			const scale = command.startsWith("NXY") ? (g_PendantSettings.zProbe.nudgeSpeed / (100 * JOYSTICK_STEPS)) : (1 / JOYSTICK_STEPS);
 			g_JogJoystick = {X: xy[0] * scale, Y: xy[1] * scale};
-			g_JogJoystickTime = new Date().getTime();
 			socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
 		}
 		else if (g_JogXYSettings)
 		{
 			g_JogXYSettings = false;
-			if (g_JogXYRepeater)
-			{
-				clearInterval(g_JogXYRepeater);
-				g_JogXYRepeater = undefined;
-			}
 			socket.emit('analogJog', {stop: true});
 		}
 		else if (g_JogXYSettings)
@@ -2068,7 +2062,7 @@ const g_SettingsContent = `<div style="height:530px;">
   </div>
 
   <div class="row mb-2">
-    <label class="cell-sm-4 pt-1">Pendant Name (<= 18 chars) <span class="far fa-question-circle ml-1"
+    <label class="cell-sm-4 pt-1">Pendant Name (up to 18 chars) <span class="far fa-question-circle ml-1" style="position:absolute; top:6px; right:4px;"
       title="Enter text to display on the pendant boot screen (up to 18 characters).
 This setting can only be edited while the pendant is connected"></span></label>
     <div class="cell-sm-6">
