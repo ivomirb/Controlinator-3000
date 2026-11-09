@@ -1,4 +1,4 @@
-// OpenBuilds CONTROL Javascript macro for interfacing with the Controlinator 3000 pendant
+// Groove Control Javascript macro for interfacing with the Controlinator 3000 pendant
 // https://github.com/ivomirb/Controlinator-3000
 
 // Normally the Arduino Nano is programmed via the USB cable. This requires the Arduino to reset when a serial connection is initiated.
@@ -322,18 +322,6 @@ function HandleJobComplete(data)
 			rButton: ["OK"],
 		});
 		return;
-	}
-
-	if (data.jobCompletedMsg.startsWith("Probe Complete"))
-	{
-		// probing job
-		var probeType = Number(data.jobCompletedMsg[14]);
-		data.jobCompletedMsg = "";
-		if (!data.failed)
-		{
-			HandleProbeJobComplete(probeType, g_LastProbeZ);
-		}
-		g_LastProbeZ = undefined;
 	}
 }
 
@@ -1656,7 +1644,7 @@ function TryComHandler(data)
 			});
 			socket.on('status', HandleStatus);
 			socket.on('queueCount', HandleQueueStatus);
-			socket._callbacks["$jobComplete"].splice(0,0, HandleJobComplete); // hack to inject our callback first to stop OpenBuilds from showing the job completed popup
+			socket.on('jobComplete', HandleJobComplete);
 
 			g_CurrentTryPort = undefined;
 			g_CurrentTryParser = undefined;
@@ -1893,7 +1881,7 @@ function StartJoystick()
 	calibrateCtx.stroke();
 
 	var calibrateCoords = document.getElementById('PendantCalCoords');
-	calibrateCoords.innerHTML = ""
+	calibrateCoords.innerHTML = "X: " + JOYSTICK_HALF + ", Y: " + JOYSTICK_HALF;
 
 	g_CalibrationTimer = setInterval(function()
 	{
@@ -2062,7 +2050,7 @@ window.g_bZThicknessValid = false; // if the probe thickness value was modified
 
 // HTML for the body of the settings dialog
 // Note: intially this was wrapped in a form, however a button in the form causes the app to reset. Seems to work without a form anyway
-const g_SettingsContent = `
+const g_SettingsContent = `<div style="height:530px;">
 <ul data-role="tabs" data-expand="true">
   <li onclick="SelectSettingsTab(0);"><a id="PendantTab1" href="#">Main Settings</a></li>
   <li onclick="SelectSettingsTab(1);"><a id="PendantTab2" href="#">Z Probe</a></li>
@@ -2070,445 +2058,482 @@ const g_SettingsContent = `
   <li onclick="SelectSettingsTab(3);"><a id="PendantTab4" href="#">Macros</a></li>
   <li onclick="SelectSettingsTab(4);"><a id="PendantTab5" href="#">Calibrate Joystick</a></li>
 </ul>
-<div id="PendantTab11" class="row mt-3">
-  <label class="cell-sm-4 pt-1" title="Check if you want the pendant to be connected on startup">Connect Automatically</label>
-  <div class="cell-sm-6">
-    <input id="PendantAutoConnect" type="checkbox" data-role="checkbox" data-style="2" checked />
+<div id="PendantTab1Content">
+  <div class="row mt-1">
+    <label class="cell-sm-4 pt-1">Connect Automatically <span class="far fa-question-circle ml-1"
+      title="Check if you want the pendant to be connected on startup"></span></label>
+    <div class="cell-sm-6">
+      <input id="PendantAutoConnect" type="checkbox" data-role="checkbox" data-style="2" checked />
+    </div>
   </div>
-</div>
 
-<div id="PendantTab12" class="row mb-2">
-  <label class="cell-sm-4 pt-1" title="Enter text to display on the pendant boot screen.
-This setting can only be edited while the pendant is connected.">Pendant Name (up to 18 chars)</label>
-  <div class="cell-sm-6">
-    <input id="PendantName" data-role="input" data-clear-button="false" data-editable="true" />
+  <div class="row mb-2">
+    <label class="cell-sm-4 pt-1">Pendant Name (<= 18 chars) <span class="far fa-question-circle ml-1"
+      title="Enter text to display on the pendant boot screen (up to 18 characters).
+This setting can only be edited while the pendant is connected"></span></label>
+    <div class="cell-sm-6">
+      <input id="PendantName" data-role="input" data-clear-button="false" data-editable="true" />
+    </div>
   </div>
-</div>
-<div id="PendantTab13" class="row mb-2">
-  <label class="cell-sm-4 pt-1" title="Select the units for the coordinates on the pendant display">Display Units</label>
-  <div class="cell-sm-6">
-    <select id="PendantDisplayUnits" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }">
-      <option value="mm">mm</option>
-      <option value="inches">inches</option>
-    </select>
+  <div class="row mb-2">
+    <label class="cell-sm-4 pt-1">Display Units <span class="far fa-question-circle ml-1"
+      title="Select the units for the coordinates on the pendant display"></span></label>
+    <div class="cell-sm-6">
+      <select id="PendantDisplayUnits" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }">
+        <option value="mm">mm</option>
+        <option value="inches">inches</option>
+      </select>
+    </div>
   </div>
-</div>
 
-<div id="PendantTab14" class="row mb-2">
-  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Steps</label>
-  <div class="cell-sm-6">
-    <input id="PendantWheelStepsMm" data-role="input" data-clear-button="false" data-append="mm/click" data-editable="true" />
+  <div id="PendantStepsMm" class="row mb-2">
+    <label class="cell-sm-4 pt-1">Wheel Click Steps <span class="far fa-question-circle ml-1"
+      title="Type up to 5 values for the jog distance for each click of the wheel"></span></label>
+    <div class="cell-sm-6">
+      <input id="PendantWheelStepsMm" data-role="input" data-clear-button="false" data-append="mm/click" data-editable="true" />
+    </div>
   </div>
-</div>
-
-<div id="PendantTab15" class="row mb-2">
-  <label class="cell-sm-4 pt-1" title="Type up to 5 values for the jog distance for each click of the wheel">Wheel Click Steps</label>
-  <div class="cell-sm-6">
-    <input id="PendantWheelStepsIn" data-role="input" data-clear-button="false" data-append="inches/click" data-editable="true" />
+  
+  <div id="PendantStepsIn" class="row mb-2">
+    <label class="cell-sm-4 pt-1">Wheel Click Steps <span class="far fa-question-circle ml-1"
+      title="Type up to 5 values for the jog distance for each click of the wheel"></span></label>
+    <div class="cell-sm-6">
+      <input id="PendantWheelStepsIn" data-role="input" data-clear-button="false" data-append="inches/click" data-editable="true" />
+    </div>
   </div>
-</div>
 
-<div id="PendantTab16" class="row">
-  <label class="cell-sm-4" title="Check if you want the spindle to automatically stop when a job is paused.
+  <div class="row">
+    <label class="cell-sm-4">Stop Spindle on Pause <span class="far fa-question-circle ml-1"
+      title="Check if you want the spindle to automatically stop when a job is paused.
 This is done by triggering the door event. Resuming the job will automatically start the spindle, wait 4 seconds, then resume the motion.
-If unchecked, you can still stop the spindle from the pendant using the RPM0 button.">Stop Spindle on Pause</label>
-  <div class="cell-sm-6">
-    <input id="PendantPauseSpindle" type="checkbox" data-role="checkbox" data-style="2" checked />
+If unchecked, you can still stop the spindle from the pendant using the RPM0 button"></span></label>
+    <div class="cell-sm-6">
+      <input id="PendantPauseSpindle" type="checkbox" data-role="checkbox" data-style="2" checked />
+    </div>
   </div>
-</div>
 
-<div id="PendantTab17" class="row mb-2">
-  <label class="cell-sm-4 pt-1" title="Add up to 3 safety checks that you need to confirm before running a job.
-The names are separated by |. Each name is up to 16 characters">Job Checklist</label>
-  <div class="cell-sm-6">
-    <input id="PendantJobChecklist" data-role="input" data-clear-button="false" data-editable="true" />
+  <div class="row mb-2">
+    <label class="cell-sm-4 pt-1">Job Checklist <span class="far fa-question-circle ml-1"
+      title="Add up to 3 safety checks that you need to confirm before running a job.
+The names are separated by |. Each name is up to 16 characters"></span></label>
+    <div class="cell-sm-6">
+      <input id="PendantJobChecklist" data-role="input" data-clear-button="false" data-editable="true" />
+    </div>
   </div>
-</div>
 
-<div id="PendantTab18" class="row mb-2 pt-1 border-top bd-gray">
-  <div class="cell-sm-4">
-    <input id="PendantSafeLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Enable Safe Jogging Area" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
+  <div class="row mb-2 pt-1 border-top bd-gray">
+    <div class="cell-sm-4">
+      <input id="PendantSafeLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Enable Safe Jogging Area" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
+    </div>
+    <div class="cell-sm-5">
+      <input id="PendantSystemLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Use Groove Control Machine Limits" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
+    </div>
   </div>
-  <div class="cell-sm-4">
-    <input id="PendantSystemLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Use System Limits" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
-  </div>
-</div>
 
-<div id="PendantTab19" class="row mb-2">
-  <div class="cell-sm-2">
-    <button id="PendantResetSafeLimits" class="button" onclick="ResetSafeLimits();" title="Reset to the default size based on the Grbl settings.
+  <div class="row mb-2">
+    <div class="cell-sm-2">
+      <button id="PendantResetSafeLimits" class="button" onclick="ResetSafeLimits();" title="Reset to the default size based on the Grbl settings.
 The machine needs to be connected">Reset</button>
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantMinX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min X" data-append="mm" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantMaxX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max X" data-append="mm" data-editable="true" />
-  </div>
-</div>
-<div id="PendantTab110" class="row mb-2">
-  <label class="cell-sm-2"></label>
-  <div class="cell-sm-4">
-    <input id="PendantMinY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Y" data-append="mm" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantMaxY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max Y" data-append="mm" data-editable="true" />
-  </div>
-</div>
-<div id="PendantTab111" class="row mb-2">
-  <label class="cell-sm-2"></label>
-  <div class="cell-sm-4">
-    <input id="PendantMinZ" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Z" data-append="mm" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantMaxZ" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max Z" data-append="mm" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab21" class="row  mt-3 mb-2">
-  <label class="cell-sm-3 pt-1">Z Probe Sequence</label>
-  <div class="cell-sm-4">
-  <select id="PendantZStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 1) { SelectSettingsTab(1); }">
-    <option value="single">Single Pass</option>
-    <option value="dual">Dual Pass</option>
-    <option value="default">Use default dialog</option>
-  </select>
-  </div>
-</div>
-
-<div id="PendantTab22" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Percentage of the rapid Z speed to use when Z Down button is pressed.
-Z Up always moves at full speed">Down Jog Speed</label>
-  <div class="cell-sm-4">
-    <input id="PendantZDown" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab23" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Percentage of the rapid XY speed to use when nudging the XY position">XY Nudge Speed</label>
-  <div class="cell-sm-4">
-    <input id="PendantXYNudge" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab24" class="row mb-2">
-  <label class="cell-sm-3 pt-1">Plate Thickness</label>
-  <div class="cell-sm-4">
-    <input id="PendantZThickness" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="mm" data-editable="true" onchange="g_bZThicknessValid = true; $('#PendantResetZThickness').prop('disabled', false);" />
-  </div>
-  <div class="cell-sm-4">
-    <button id="PendantResetZThickness" class="button" onclick="g_bZThicknessValid = false; $('#PendantZThickness').val(localStorage.getItem('z0platethickness')); $('#PendantResetZThickness').prop('disabled', true);" title="Reset to the default value from OpenBuilds">Reset</button>
-  </div>
-</div>
-
-<div id="PendantTab25" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Check this to use the Z value from the probe contact instead of the position after the probing completes.
-They can differ by 0.1-0.2mm as the machine doesn't stop moving immediately on contact." >Use Exact Probe Result</label>
-  <div class="cell-sm-4">
-    <input id="PendantUseProbe" type="checkbox" data-role="checkbox" data-style="2" checked />
-  </div>
-</div>
-
-<div id="PendantTab26" class="row mb-2 pt-1 border-top bd-gray">
-  <label class="cell-sm-6">First Pass</label>
-</div>
-
-<div id="PendantTab27" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Initial movement to locate the Z probe">Seek</label>
-  <div class="cell-sm-4">
-    <input id="PendantZSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantZSeek1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab28" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Retraction after the Z probe was touched.
-Use short distance and slower speed if there is a second pass">Retract</label>
-  <div class="cell-sm-4">
-    <input id="PendantZRetract1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantZRetract1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab29" class="row mb-2 pt-1 border-top bd-gray">
-  <label class="cell-sm-6">Second Pass</label>
-</div>
-
-<div id="PendantTab210" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Second movement to locate the Z probe. Needs to be larger than the Retract from the first pass.
-Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
-  <div class="cell-sm-4">
-    <input id="PendantZSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantZSeek2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab211" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Retraction after the Z probe was touched">Retract</label>
-  <div class="cell-sm-4">
-    <input id="PendantZRetract2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantZRetract2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab31" class="row mt-3 mb-2">
-  <label class="cell-sm-3 pt-1">Tool Probe Sequence</label>
-  <div class="cell-sm-4">
-  <select id="PendantToolStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 2) { SelectSettingsTab(2); }">
-    <option value="disable">Disabled</option>
-    <option value="single">Single Pass</option>
-    <option value="dual">Dual Pass</option>
-  </select>
-  </div>
-</div>
-
-<div id="PendantTab32" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Percentage of the rapid Z speed to use when Z Down button is pressed.
-Z Up always moves at full speed">Down Jog Speed</label>
-  <div class="cell-sm-4">
-   <input id="PendantToolDown" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab33" class="row mb-2 mt-2">
-  <label class="cell-sm-3 pt-1" title="XY location of the tool probe in machine coordinates, and a safe Z above it">Probe Location</label>
-  <div class="cell-sm-3">
-    <input id="PendantToolX" type="number" style="text-align:right;" data-role="input" data-prepend="X" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-3">
-    <input id="PendantToolY" type="number" style="text-align:right;" data-role="input" data-prepend="Y" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-3">
-    <input id="PendantToolZ" type="number" style="text-align:right;" data-role="input" data-prepend="Z" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab34" class="row mb-2 mt-2">
-  <label class="cell-sm-3 pt-1" title="XY randomization to reduce wear to the probe surface">Randomize Location</label>
-  <div class="cell-sm-3">
-    <input id="PendantToolRandomXY" type="number" style="text-align:right;" data-role="input" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab35" class="row mb-2 pt-1 border-top bd-gray">
-  <label class="cell-sm-6">First Pass</label>
-</div>
-
-<div id="PendantTab36" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Initial movement to measure the tool">Seek</label>
-  <div class="cell-sm-4">
-    <input id="PendantToolSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantToolSeek1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab37" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Retraction after the tool probe was touched.
-Use short distance and slower speed if there is a second pass">Retract</label>
-  <div class="cell-sm-4">
-    <input id="PendantToolRetract1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantToolRetract1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab38" class="row mb-2 pt-1 border-top bd-gray">
-  <label class="cell-sm-6">Second Pass</label>
-</div>
-
-<div id="PendantTab39" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Second movement to measure the tool. Needs to be larger than the Retract from the first pass.
-Use shorter distance and slower speed than the first pass for better accuracy">Seek</label>
-  <div class="cell-sm-4">
-    <input id="PendantToolSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantToolSeek2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<div id="PendantTab40" class="row mb-2">
-  <label class="cell-sm-3 pt-1" title="Retraction after the tool probe was touched">Retract</label>
-  <div class="cell-sm-4">
-    <input id="PendantToolRetract2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-4">
-    <input id="PendantToolRetract2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
-  </div>
-</div>
-
-<p id="PendantTab41" class="small mb-4">Select up to 7 of the existing OpenBuilds CONTROL macros to activate from the pendant.
-Enter the macro name in the first column. In the second column you can enter a display name to show on the pendant screen. It can be up to 8 characters long.<br>
-Check the Hold box to require the button to be pressed for 1 second (prevents accidental activation).</p>
-
-<div id="PendantTab42" class="row mb-2">
-  <div class="cell-sm-5">
-    <input id="PendantMacroText1" data-role="input" data-prepend="#1" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-5">
-    <input id="PendantMacroLabel1" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-1">
-    <input id="PendantMacroHold1" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
-  </div>
-</div>
-
-<div id="PendantTab43" class="row mb-2">
-  <div class="cell-sm-5">
-    <input id="PendantMacroText2" data-role="input" data-prepend="#2" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-5">
-    <input id="PendantMacroLabel2" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-1">
-    <input id="PendantMacroHold2" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
-  </div>
-</div>
-
-<div id="PendantTab44" class="row mb-2">
-  <div class="cell-sm-5">
-    <input id="PendantMacroText3" data-role="input" data-prepend="#3" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-5">
-    <input id="PendantMacroLabel3" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-1">
-    <input id="PendantMacroHold3" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
-  </div>
-</div>
-
-<div id="PendantTab45" class="row mb-2">
-  <div class="cell-sm-5">
-    <input id="PendantMacroText4" data-role="input" data-prepend="#4" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-5">
-    <input id="PendantMacroLabel4" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-1">
-    <input id="PendantMacroHold4" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
-  </div>
-</div>
-
-<div id="PendantTab46" class="row mb-2">
-  <div class="cell-sm-5">
-    <input id="PendantMacroText5" data-role="input" data-prepend="#5" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-5">
-    <input id="PendantMacroLabel5" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-1">
-    <input id="PendantMacroHold5" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
-  </div>
-</div>
-
-<div id="PendantTab47" class="row mb-2">
-  <div class="cell-sm-5">
-    <input id="PendantMacroText6" data-role="input" data-prepend="#6" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-5">
-    <input id="PendantMacroLabel6" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-1">
-    <input id="PendantMacroHold6" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
-  </div>
-</div>
-
-<div id="PendantTab48" class="row mb-2">
-  <div class="cell-sm-5">
-    <input id="PendantMacroText7" data-role="input" data-prepend="#7" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-5">
-    <input id="PendantMacroLabel7" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
-  </div>
-  <div class="cell-sm-1">
-    <input id="PendantMacroHold7" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
-  </div>
-</div>
-
-<p id="PendantTab51" class="small mb-4">Move the joystick on the pendant to verify it is connected. Press the Start Calibration
-button to begin the calibration process, which will determine the range of motion and the center zone for each axis.
-You can also enter the values manually.</p>
-
-<div id="PendantTab52" class="row mb-3 mt-5">
-  <div class="cell-sm-3 pt-3" style="display:flex; flex-direction:column;">
-    <input id="PendantSwapXY" type="checkbox" data-role="checkbox" data-style="2" data-caption="Swap X/Y" onclick="PendantSwapXY()" />
-    <input id="PendantInvertX" type="checkbox" data-role="checkbox" data-style="2" data-caption="Invert X" onclick="PendantInvertX()" />
-    <input id="PendantInvertY" type="checkbox" data-role="checkbox" data-style="2" data-caption="Invert Y" onclick="PendantInvertY()" />
-  </div>
-  <div class="cell-sm-4">
-    <canvas id="PendantCalCanvas" width="220" height="220" />
-    <br/>
-    <p id="PendantCalCoords">X:` + (JOYSTICK_RANGE-1) + `, Y:` + (JOYSTICK_RANGE-1) + `</p>
-  </div>
-  <div class="cell-sm-4">
-    <button id="PendantCalibrate" class="button success" onclick="StartCalibration();">Start Calibration</button>
-    <p id="PendantCalText"></p>
-    <br>
-    <button id="PendantCalibrateCancel" class="button" onclick="CancelCalibration(false);">Cancel Calibration</button>
-  </div>
-</div>
-
-<div id="PendantTab53" class="row pt-1 border-top bd-gray">
-  <div class="cell-sm-6 border-right bd-gray">
-    <div class="row mb-2">
-      <label class="cell-sm-6" title="The min and max value that the joystick can reach">Joystick Range</label>
     </div>
-
-    <div class="row mb-2">
-      <div class="cell-sm-6">
-        <input id="PendantJoyMinX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min X" data-editable="true" onchange="RefreshJoystickSettings();"/>
-      </div>
-      <div class="cell-sm-6">
-        <input id="PendantJoyMaxX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max X" data-editable="true" onchange="RefreshJoystickSettings();"/>
-      </div>
+    <div class="cell-sm-4">
+      <input id="PendantMinX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min X" data-append="mm" data-editable="true" />
     </div>
+    <div class="cell-sm-4">
+      <input id="PendantMaxX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max X" data-append="mm" data-editable="true" />
+    </div>
+  </div>
+  <div class="row mb-2">
+    <label class="cell-sm-2"></label>
+    <div class="cell-sm-4">
+      <input id="PendantMinY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Y" data-append="mm" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantMaxY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max Y" data-append="mm" data-editable="true" />
+    </div>
+  </div>
+  <div class="row mb-2">
+    <label class="cell-sm-2"></label>
+    <div class="cell-sm-4">
+      <input id="PendantMinZ" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Z" data-append="mm" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantMaxZ" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max Z" data-append="mm" data-editable="true" />
+    </div>
+  </div>
+</div>
 
-    <div class="row mb-2">
-      <div class="cell-sm-6">
-        <input id="PendantJoyMinY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Y" data-editable="true" onchange="RefreshJoystickSettings();"/>
-      </div>
-      <div class="cell-sm-6">
-        <input id="PendantJoyMaxY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max Y" data-editable="true" onchange="RefreshJoystickSettings();"/>
-      </div>
+<div id="PendantTab2Content">
+  <div class="row  mt-3 mb-2">
+    <label class="cell-sm-3 pt-1">Z Probe Sequence</label>
+    <div class="cell-sm-4">
+    <select id="PendantZStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 1) { SelectSettingsTab(1); }">
+      <option value="single">Single Pass</option>
+      <option value="dual">Dual Pass</option>
+      <option value="default">Use default dialog</option>
+    </select>
     </div>
   </div>
 
-  <div class="cell-sm-6">
-    <div class="row mb-2">
-      <label class="cell-sm-6" title="The size of the center zone. When the curor is inside the zone, the joystick is considered to be released.
-The calibration process uses a conservative estimate. If your joystick is more accurate, you can manually reduce the size of the center zone">Center Zone</label>
+  <div class="row mb-2">
+    <label class="cell-sm-3 pt-1">Down Jog Speed <span class="far fa-question-circle ml-1"
+      title="Percentage of the rapid Z speed to use when Z Down button is pressed.
+Z Up always moves at full speed"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantZDown" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2">
+    <label class="cell-sm-3 pt-1">XY Nudge Speed <span class="far fa-question-circle ml-1"
+      title="Percentage of the rapid XY speed to use when nudging the XY position"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantXYNudge" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 pendant-z-single">
+    <label class="cell-sm-3 pt-1">Plate Thickness</label>
+    <div class="cell-sm-4">
+      <input id="PendantZThickness" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="mm" data-editable="true" onchange="g_bZThicknessValid = true; $('#PendantResetZThickness').prop('disabled', false);" />
+    </div>
+    <div class="cell-sm-4">
+      <button id="PendantResetZThickness" class="button" onclick="g_bZThicknessValid = false; $('#PendantZThickness').val(localStorage.getItem('z0platethickness')); $('#PendantResetZThickness').prop('disabled', true);" title="Reset to the default value from Groove Control">Reset</button>
+    </div>
+  </div>
+
+  <div class="row mb-2 pendant-z-single">
+    <label class="cell-sm-3 pt-1">Use Exact Probe Result <span class="far fa-question-circle ml-1" style="position:absolute; top:6px; right:-2px;"
+      title="Check this to use the Z value from the probe contact instead of the position after the probing completes.
+They can differ by 0.1-0.2mm as the machine doesn't stop moving immediately on contact"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantUseProbe" type="checkbox" data-role="checkbox" data-style="2" checked />
+    </div>
+  </div>
+
+  <div class="row mb-2 pt-1 border-top bd-gray pendant-z-dual">
+    <label class="cell-sm-6">First Pass</label>
+  </div>
+
+  <div class="row mb-2 pendant-z-single">
+    <label class="cell-sm-3 pt-1">Seek <span class="far fa-question-circle ml-1"
+      title="Initial movement to locate the Z probe"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantZSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantZSeek1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 pendant-z-single">
+    <label class="cell-sm-3 pt-1">Retract <span class="far fa-question-circle ml-1"
+      title="Retraction after the Z probe was touched.
+Use short distance and slower speed if there is a second pass"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantZRetract1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantZRetract1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 pt-1 border-top bd-gray pendant-z-dual">
+    <label class="cell-sm-6">Second Pass</label>
+  </div>
+
+  <div class="row mb-2 pendant-z-dual">
+    <label class="cell-sm-3 pt-1">Seek <span class="far fa-question-circle ml-1"
+      title="Second movement to locate the Z probe. Needs to be larger than the Retract from the first pass.
+Use shorter distance and slower speed than the first pass for better accuracy"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantZSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantZSeek2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 pendant-z-dual">
+    <label class="cell-sm-3 pt-1">Retract <span class="far fa-question-circle ml-1"
+      title="Retraction after the Z probe was touched"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantZRetract2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantZRetract2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+</div>
+
+<div id="PendantTab3Content">
+  <div class="row mt-3 mb-2">
+    <label class="cell-sm-3 pt-1">Tool Probe Sequence</label>
+    <div class="cell-sm-4">
+    <select id="PendantToolStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 2) { SelectSettingsTab(2); }">
+      <option value="disable">Disabled</option>
+      <option value="single">Single Pass</option>
+      <option value="dual">Dual Pass</option>
+    </select>
+    </div>
+  </div>
+
+  <div class="row mb-2 pendant-tool-single">
+    <label class="cell-sm-3 pt-1">Down Jog Speed <span class="far fa-question-circle ml-1"
+      title="Percentage of the rapid Z speed to use when Z Down button is pressed.
+Z Up always moves at full speed"></span></label>
+    <div class="cell-sm-4">
+     <input id="PendantToolDown" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-append="%" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 mt-2 pendant-tool-single">
+    <label class="cell-sm-3 pt-1">Probe Location <span class="far fa-question-circle ml-1"
+      title="XY location of the tool probe in machine coordinates"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantToolX" type="number" style="text-align:right;" data-role="input" data-prepend="X" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantToolY" type="number" style="text-align:right;" data-role="input" data-prepend="Y" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 mt-2 pendant-tool-single">
+    <label class="cell-sm-3 pt-1">Probe Safe Height <span class="far fa-question-circle ml-1"
+      title="Safe height in machine coordinates that is used to approach the probe"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantToolZ" type="number" style="text-align:right;" data-role="input" data-prepend="Z" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 mt-2 pendant-tool-single">
+    <label class="cell-sm-3 pt-1">Randomize Location <span class="far fa-question-circle ml-1"
+      title="XY random offset to reduce wear to the probe surface"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantToolRandomXY" type="number" style="text-align:right;" data-role="input" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 pt-1 border-top bd-gray pendant-tool-dual">
+    <label class="cell-sm-6">First Pass</label>
+  </div>
+
+  <div class="row mb-2 pendant-tool-single">
+    <label class="cell-sm-3 pt-1">Seek <span class="far fa-question-circle ml-1"
+      title="Initial movement to measure the tool"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantToolSeek1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantToolSeek1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 pendant-tool-single">
+    <label class="cell-sm-3 pt-1">Retract <span class="far fa-question-circle ml-1"
+      title="Retraction after the tool probe was touched.
+Use short distance and slower speed if there is a second pass"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantToolRetract1T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantToolRetract1F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 pt-1 border-top bd-gray pendant-tool-dual">
+    <label class="cell-sm-6">Second Pass</label>
+  </div>
+
+  <div class="row mb-2 pendant-tool-dual">
+    <label class="cell-sm-3 pt-1">Seek <span class="far fa-question-circle ml-1"
+      title="Second movement to measure the tool. Needs to be larger than the Retract from the first pass.
+Use shorter distance and slower speed than the first pass for better accuracy"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantToolSeek2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantToolSeek2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row mb-2 pendant-tool-dual">
+    <label class="cell-sm-3 pt-1">Retract <span class="far fa-question-circle ml-1"
+      title="Retraction after the tool probe was touched"></span></label>
+    <div class="cell-sm-4">
+      <input id="PendantToolRetract2T" type="number" style="text-align:right;" data-role="input" data-prepend="Travel" data-append="mm" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantToolRetract2F" type="number" style="text-align:right;" data-role="input" data-prepend="Feed" data-append="mm/min" data-clear-button="false" data-editable="true" />
+    </div>
+  </div>
+</div>
+
+<div id="PendantTab4Content">
+  <small class="mb-4 mt-2" style="display:block">Select up to 7 of the existing Groove Control macros to activate from the pendant.
+  Enter the macro name in the first column. In the second column you can enter a display name to show on the pendant screen. It can be up to 8 characters long.<br>
+  Check the Hold box to require the button to be pressed for 1 second (prevents accidental activation).</small>
+  
+  <div class="row mb-2">
+    <div class="cell-sm-5">
+      <input id="PendantMacroText1" data-role="input" data-prepend="#1" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-5">
+      <input id="PendantMacroLabel1" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-1">
+      <input id="PendantMacroHold1" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
+    </div>
+  </div>
+
+  <div class="row mb-2">
+    <div class="cell-sm-5">
+      <input id="PendantMacroText2" data-role="input" data-prepend="#2" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-5">
+      <input id="PendantMacroLabel2" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-1">
+      <input id="PendantMacroHold2" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
+    </div>
+  </div>
+
+  <div class="row mb-2">
+    <div class="cell-sm-5">
+      <input id="PendantMacroText3" data-role="input" data-prepend="#3" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-5">
+      <input id="PendantMacroLabel3" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-1">
+      <input id="PendantMacroHold3" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
+    </div>
+  </div>
+
+  <div class="row mb-2">
+    <div class="cell-sm-5">
+      <input id="PendantMacroText4" data-role="input" data-prepend="#4" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-5">
+      <input id="PendantMacroLabel4" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-1">
+      <input id="PendantMacroHold4" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
+    </div>
+  </div>
+  
+  <div class="row mb-2">
+    <div class="cell-sm-5">
+      <input id="PendantMacroText5" data-role="input" data-prepend="#5" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-5">
+      <input id="PendantMacroLabel5" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-1">
+      <input id="PendantMacroHold5" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
+    </div>
+  </div>
+  
+  <div class="row mb-2">
+    <div class="cell-sm-5">
+      <input id="PendantMacroText6" data-role="input" data-prepend="#6" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-5">
+      <input id="PendantMacroLabel6" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-1">
+      <input id="PendantMacroHold6" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
+    </div>
+  </div>
+  
+  <div class="row mb-2">
+    <div class="cell-sm-5">
+      <input id="PendantMacroText7" data-role="input" data-prepend="#7" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-5">
+      <input id="PendantMacroLabel7" data-role="input" data-prepend="Label" data-clear-button="false" data-editable="true" />
+    </div>
+    <div class="cell-sm-1">
+      <input id="PendantMacroHold7" type="checkbox" data-role="checkbox" data-style="2" data-caption="Hold" />
+    </div>
+  </div>
+</div>
+
+<div id="PendantTab5Content">
+  <small class="mb-4 mt-2" style="display:block;">Move the joystick on the pendant to verify it is connected. Press the Start Calibration
+  button to begin the calibration process, which will determine the range of motion and the center zone for each axis.
+  You can also enter the values manually.</small>
+
+  <div class="row mb-3 mt-5">
+    <div class="cell-sm-3 pt-3" style="display:flex; flex-direction:column;">
+      <input id="PendantSwapXY" type="checkbox" data-role="checkbox" data-style="2" data-caption="Swap X/Y" onclick="PendantSwapXY()" />
+      <input id="PendantInvertX" type="checkbox" data-role="checkbox" data-style="2" data-caption="Invert X" onclick="PendantInvertX()" />
+      <input id="PendantInvertY" type="checkbox" data-role="checkbox" data-style="2" data-caption="Invert Y" onclick="PendantInvertY()" />
+    </div>
+    <div class="cell-sm-4">
+      <canvas id="PendantCalCanvas" width="220" height="220" />
+      <span id="PendantCalCoords">X:` + JOYSTICK_HALF + `, Y:` + JOYSTICK_HALF + `</span>
+    </div>
+    <div class="cell-sm-4">
+      <button id="PendantCalibrate" class="button success" onclick="StartCalibration();">Start Calibration</button>
+      <p id="PendantCalText"></p>
+      <br>
+      <button id="PendantCalibrateCancel" class="button" onclick="CancelCalibration(false);">Cancel Calibration</button>
+    </div>
+  </div>
+
+  <div class="row pt-1 border-top bd-gray">
+    <div class="cell-sm-6 border-right bd-gray">
+      <div class="row mb-2">
+        <label class="cell-sm-6">Joystick Range <span class="far fa-question-circle ml-1"
+      title="The min and max value that the joystick can reach"></span></label>
+      </div>
+
+      <div class="row mb-2">
+        <div class="cell-sm-6">
+          <input id="PendantJoyMinX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min X" data-editable="true" onchange="RefreshJoystickSettings();"/>
+        </div>
+        <div class="cell-sm-6">
+          <input id="PendantJoyMaxX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max X" data-editable="true" onchange="RefreshJoystickSettings();"/>
+        </div>
+      </div>
+
+      <div class="row mb-2">
+        <div class="cell-sm-6">
+          <input id="PendantJoyMinY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Y" data-editable="true" onchange="RefreshJoystickSettings();"/>
+        </div>
+        <div class="cell-sm-6">
+          <input id="PendantJoyMaxY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max Y" data-editable="true" onchange="RefreshJoystickSettings();"/>
+        </div>
+      </div>
     </div>
 
-    <div class="row mb-2">
-      <div class="cell-sm-6">
-        <input id="PendantJoyCenterMinX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min X" data-editable="true" onchange="RefreshJoystickSettings();"/>
+    <div class="cell-sm-6">
+      <div class="row mb-2">
+        <label class="cell-sm-6">Center Zone <span class="far fa-question-circle ml-1"
+      title="The size of the center zone. When the curor is inside the zone, the joystick is considered to be released.
+The calibration process uses a conservative estimate. If your joystick is more accurate, you can manually reduce the size of the center zone"></span></label>
       </div>
-      <div class="cell-sm-6">
-        <input id="PendantJoyCenterMaxX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max X" data-editable="true" onchange="RefreshJoystickSettings();"/>
-      </div>
-    </div>
 
-    <div class="row mb-2">
-      <div class="cell-sm-6">
-        <input id="PendantJoyCenterMinY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Y" data-editable="true" onchange="RefreshJoystickSettings();"/>
+      <div class="row mb-2">
+        <div class="cell-sm-6">
+          <input id="PendantJoyCenterMinX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min X" data-editable="true" onchange="RefreshJoystickSettings();"/>
+        </div>
+        <div class="cell-sm-6">
+          <input id="PendantJoyCenterMaxX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max X" data-editable="true" onchange="RefreshJoystickSettings();"/>
+        </div>
       </div>
-      <div class="cell-sm-6">
-        <input id="PendantJoyCenterMaxY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max Y" data-editable="true" onchange="RefreshJoystickSettings();"/>
+
+      <div class="row mb-2">
+        <div class="cell-sm-6">
+          <input id="PendantJoyCenterMinY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Y" data-editable="true" onchange="RefreshJoystickSettings();"/>
+        </div>
+        <div class="cell-sm-6">
+          <input id="PendantJoyCenterMaxY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max Y" data-editable="true" onchange="RefreshJoystickSettings();"/>
+        </div>
       </div>
     </div>
   </div>
-</div>`
+</div></div>`;
 
 // Selects a tab in the settings. Shows/hides the necessary elements
 window.SelectSettingsTab = function(index)
@@ -2526,7 +2551,7 @@ window.SelectSettingsTab = function(index)
 	var tab3 = (index == 2);
 	var tab4 = (index == 3);
 	var tab5 = (index == 4);
-	$('#PendantTab11,#PendantTab12,#PendantTab13,#PendantTab16,#PendantTab17,#PendantTab18,#PendantTab19,#PendantTab110,#PendantTab111').toggle(tab1);
+	$('#PendantTab1Content').toggle(tab1);
 
 	var safeLimitsDisabled = !$('#PendantSafeLimits').prop('checked');
 	var useSystemLimits = $('#PendantSystemLimits').prop('checked');
@@ -2534,23 +2559,23 @@ window.SelectSettingsTab = function(index)
 	$('#PendantResetSafeLimits,#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled || useSystemLimits);
 
 	var displayUnits = $('#PendantDisplayUnits').val();
-	$('#PendantTab14').toggle(tab1 && displayUnits != "inches");
-	$('#PendantTab15').toggle(tab1 && displayUnits == "inches");
+	$('#PendantStepsMm').toggle(displayUnits != "inches");
+	$('#PendantStepsIn').toggle(displayUnits == "inches");
 
+	$('#PendantTab2Content').toggle(tab2);
 	var zStyle = $('#PendantZStyle').val();
-	$('#PendantTab21,#PendantTab22,#PendantTab23').toggle(tab2);
-	$('#PendantTab24,#PendantTab25,#PendantTab27,#PendantTab28').toggle(tab2 && zStyle != "default");
-	$('#PendantTab26,#PendantTab29,#PendantTab210,#PendantTab211').toggle(tab2 && zStyle == "dual");
+	$('.pendant-z-single').toggle(zStyle != "default");
+	$('.pendant-z-dual').toggle(zStyle == "dual");
 
-	$('#PendantTab31').toggle(tab3);
+	$('#PendantTab3Content').toggle(tab3);
 
 	var toolStyle = $('#PendantToolStyle').val();
-	$('#PendantTab32,#PendantTab33,#PendantTab34,#PendantTab36,#PendantTab37').toggle(tab3 && toolStyle != "disable");
-	$('#PendantTab35,#PendantTab38,#PendantTab39,#PendantTab40').toggle(tab3 && toolStyle == "dual");
+	$('.pendant-tool-single').toggle(toolStyle != "disable");
+	$('.pendant-tool-dual').toggle(toolStyle == "dual");
 
-	$('#PendantTab41,#PendantTab42,#PendantTab43,#PendantTab44,#PendantTab45,#PendantTab46,#PendantTab47,#PendantTab48').toggle(tab4);
+	$('#PendantTab4Content').toggle(tab4);
 
-	$('#PendantTab51,#PendantTab52,#PendantCalibrate,#PendantTab53').toggle(tab5);
+	$('#PendantTab5Content,#PendantCalibrate').toggle(tab5);
 	$('#PendantCalibrateCancel').hide();
 
 	if (tab5)
