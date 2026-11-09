@@ -709,6 +709,20 @@ function HandleJogCommand(command)
 			{
 				g_JogJoystick = {X: xy[0] * g_JogXYSettings.scale, Y: xy[1] * g_JogXYSettings.scale};
 			}
+			const scale = command.startsWith("NXY") ? (g_PendantSettings.zProbe.nudgeSpeed / (100 * JOYSTICK_STEPS)) : (1 / JOYSTICK_STEPS);
+			g_JogJoystick = {X: xy[0] * scale, Y: xy[1] * scale};
+			g_JogJoystickTime = new Date().getTime();
+			socket.emit('analogJog', {dx: g_JogJoystick.X, dy: g_JogJoystick.Y, dz: 0, settings: g_JogXYSettings});
+		}
+		else if (g_JogXYSettings)
+		{
+			g_JogXYSettings = false;
+			if (g_JogXYRepeater)
+			{
+				clearInterval(g_JogXYRepeater);
+				g_JogXYRepeater = undefined;
+			}
+			socket.emit('analogJog', {stop: true});
 		}
 		else if (g_JogXYSettings)
 		{
