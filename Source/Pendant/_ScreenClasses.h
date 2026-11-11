@@ -148,6 +148,10 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// 1 - Step moves to button 4, WCS is removed
+// 2 - Step moves to button 7, WCS and Back share button 4
+#define JOG_4AXIS_VARIANT 2
+
 // This screen allows for jogging the X/Y/Z axis with the wheel and the joystick
 class JogScreen : public BaseScreen
 {
@@ -177,6 +181,9 @@ private:
 		unsigned long m_LastInputTime; // time of last user input
 		unsigned long m_ZHoldTime; // duration of holding the Z button
 		unsigned long m_StepHoldTime; // duration of holding the Step button
+#if JOG_4AXIS_VARIANT == 2
+		unsigned long m_BackHoldTime; // duration of holding the Back button
+#endif
 		unsigned long m_LastWheelTime; // time of the last sent wheel message
 		unsigned long m_LastJoystickTime; // time of last sent joystick message
 		uint8_t m_Axis : 4; // current axis - one bit for X, Y,Z and A
@@ -184,6 +191,9 @@ private:
 		uint8_t m_bShowActions : 1; // show the actions to do during idle
 		uint8_t m_bShowZUp : 1; // show Z Up instead of Z
 		uint8_t m_bShowAlign : 1; // show Align instead of Step
+#if JOG_4AXIS_VARIANT == 2
+		uint8_t m_bBack4axis : 1; // show Back instead of [WCS] in 4 axis mode
+#endif
 		uint8_t m_bJoggingUp : 1;
 
 		// previous quantized joystick position
@@ -212,13 +222,28 @@ private:
 		BUTTON_Y = 1,
 		BUTTON_Z = 2,
 		BUTTON_A = 3,
-		BUTTON_STEP3 = 3,
-		BUTTON_STEP4 = 4,
 		BUTTON_WCS = 4,
 		BUTTON_GOTO0 = 5,
 		BUTTON_STOP = 5,
 		BUTTON_SET0 = 6,
+
+#if JOG_4AXIS_VARIANT == 1
+		// 3 axis
+		BUTTON_STEP3 = 3,
+
+		// 4 axis
+		BUTTON_STEP4 = 4,
+
 		BUTTON_BACK = 7,
+#elif JOG_4AXIS_VARIANT == 2
+		// 3 axis
+		BUTTON_STEP3 = 3,
+		BUTTON_BACK3 = 7,
+
+		// 4 axis
+		BUTTON_STEP4 = 7,
+		BUTTON_BACK4 = 4,
+#endif
 	};
 
 	static void GetJoystick( int16_t *px, int16_t *py );
@@ -237,6 +262,9 @@ private:
 		uint8_t bShowActions : 1;
 		uint8_t bShowZUp : 1;
 		uint8_t bShowAlign : 1;
+#if JOG_4AXIS_VARIANT == 2
+		uint8_t bBack4axis : 1;
+#endif
 		uint8_t stepIndex : 3;
 	};
 

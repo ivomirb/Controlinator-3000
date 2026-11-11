@@ -51,7 +51,11 @@ void JogScreen::Draw( void )
 	const bool bDrawAll = s_DrawState.bDrawAll || pDrawState->bWorkSpace != g_bWorkSpace ||
 		pDrawState->bShowInches != g_bShowInches || pDrawState->axis != pState->m_Axis ||
 		pDrawState->bShowStop != pState->m_bShowStop || pDrawState->bShowActions != pState->m_bShowActions ||
-		pDrawState->bShowZUp != pState->m_bShowZUp || pDrawState->bShowAlign != pState->m_bShowAlign || pDrawState->stepIndex != m_StepIndex;
+		pDrawState->bShowZUp != pState->m_bShowZUp || pDrawState->bShowAlign != pState->m_bShowAlign ||
+#if JOG_4AXIS_VARIANT == 2
+		pDrawState->bBack4axis != pState->m_bBack4axis ||
+#endif
+		pDrawState->stepIndex != m_StepIndex;
 	pDrawState->bWorkSpace = g_bWorkSpace;
 	pDrawState->bShowInches = g_bShowInches;
 	pDrawState->axis = pState->m_Axis;
@@ -59,6 +63,9 @@ void JogScreen::Draw( void )
 	pDrawState->bShowActions = pState->m_bShowActions;
 	pDrawState->bShowZUp = pState->m_bShowZUp;
 	pDrawState->bShowAlign = pState->m_bShowAlign;
+#if JOG_4AXIS_VARIANT == 2
+	pDrawState->bBack4axis = pState->m_bBack4axis;
+#endif
 	pDrawState->stepIndex = m_StepIndex;
 	if (bDrawAll && !s_DrawState.bDrawAll)
 	{
@@ -81,11 +88,18 @@ void JogScreen::Draw( void )
 	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawA = g_bShow4Axis, bDrawAll = true;
 #endif
 	const int BUTTON_STEP = g_bShow4Axis ? BUTTON_STEP4 : BUTTON_STEP3;
+#if JOG_4AXIS_VARIANT == 2
+	const int BUTTON_BACK = g_bShow4Axis ? BUTTON_BACK4 : BUTTON_BACK3;
+#endif
 
 	if (bDrawAll)
 	{
 		DrawMachineStatus(g_StrJOG, 3);
+#if JOG_4AXIS_VARIANT == 1
 		if (!g_bShow4Axis)
+#elif JOG_4AXIS_VARIANT == 2
+		if (!g_bShow4Axis || !pState->m_bBack4axis)
+#endif
 		{
 			DrawText(13, 1, g_bWorkSpace ? g_StrWCS : g_StrMCS);
 		}
@@ -146,7 +160,14 @@ void JogScreen::Draw( void )
 			DrawUnusedButtons(0x68);
 		}
 
+#if JOG_4AXIS_VARIANT == 1
 		DrawButton(BUTTON_BACK, g_StrBack, 4, false);
+#elif JOG_4AXIS_VARIANT == 2
+		if (!g_bShow4Axis || pState->m_bBack4axis)
+		{
+			DrawButton(BUTTON_BACK, g_StrBack, 4, g_bShow4Axis);
+		}
+#endif
 	}
 
 	if (bDrawX)
@@ -298,6 +319,8 @@ void JogScreen::Update( unsigned long time )
 	{
 		SetAxis(3);
 	}
+
+#if JOG_4AXIS_VARIANT == 1
 	else if (!g_bShow4Axis && button == BUTTON_WCS)
 	{
 		g_bWorkSpace = !g_bWorkSpace;
@@ -307,6 +330,49 @@ void JogScreen::Update( unsigned long time )
 		CloseScreen();
 		return;
 	}
+#elif JOG_4AXIS_VARIANT == 2
+	if (g_bShow4Axis)
+	{
+		// 4-axis mode - WCS and Back share a button
+		if (button == BUTTON_BACK4)
+		{
+			pState->m_BackHoldTime = time;
+		}
+
+		bool bShow4Axis = pState->m_BackHoldTime != 0 && time - pState->m_BackHoldTime > BUTTON_HOLD_TIME / 2;
+		if (bShow4Axis && !pState->m_bBack4axis)
+		{
+			g_ButtonChangeTimers[BUTTON_BACK4] = 0;
+		}
+		pState->m_bBack4axis = bShow4Axis;
+
+		if (bShow4Axis && TestBit(g_ButtonHold, BUTTON_BACK4))
+		{
+			// Back button held down for full time, back out
+			CloseScreen();
+			return;
+		}
+		else if (!bShow4Axis && TestBit(g_ButtonUnclick, BUTTON_BACK4))
+		{
+			// Short tap toggles wcs
+			g_bWorkSpace = !g_bWorkSpace;
+		}
+	}
+	else
+	{
+		// 3-axis mode - WCS and Back work as normal
+		if (button == BUTTON_WCS)
+		{
+			g_bWorkSpace = !g_bWorkSpace;
+		}
+		else if (button == BUTTON_BACK3)
+		{
+			CloseScreen();
+			return;
+		}
+	}
+#endif
+
 
 	if (button == BUTTON_Z)
 	{
@@ -475,6 +541,13 @@ void JogScreen::Update( unsigned long time )
 		pState->m_StepHoldTime = 0;
 		pState->m_bShowAlign = false;
 	}
+#if JOG_4AXIS_VARIANT == 2
+	if (g_bShow4Axis && !TestBit(g_ButtonState, BUTTON_BACK4))
+	{
+		pState->m_BackHoldTime = 0;
+		pState->m_bBack4axis = false;
+	}
+#endif
 }
 
 void JogScreen::Activate( unsigned long time )
