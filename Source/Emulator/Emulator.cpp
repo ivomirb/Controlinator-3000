@@ -143,7 +143,7 @@ void GenerateFont( void )
 		"checked",
 		"hold",
 		"placeholder",
-		"unused",
+		"plusminus",
 		"unused",
 		"unused",
 		"unused",
@@ -153,7 +153,7 @@ void GenerateFont( void )
 		"unused",
 		"new line",
 		"unused",
-		"unused",
+		"A bold",
 
 		"0 bold",
 		"1 bold",

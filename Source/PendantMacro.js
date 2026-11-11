@@ -107,6 +107,8 @@ function GetDefaultSettings()
 		displayUnits: "mm",
 		wheelStepsMm: [1, 0.1, 0.01],
 		wheelStepsIn: [0.1, 0.01, 0.001],
+		wheelStepsDeg: [10, 1, 0.1],
+		axisCount: 3, // 3 or 4
 		pauseSpindle: false,
 		jobChecklist: "Remove Probe|Turn On Spindle",
 		safeLimitsEnabled: true,
@@ -205,7 +207,8 @@ function GenerateStatusString(s)
 	var str = "STATUS:" + status + "|"
 		+ s.machine.position.work.x.toFixed(3) + ","
 		+ s.machine.position.work.y.toFixed(3) + ","
-		+ s.machine.position.work.z.toFixed(3) + "|"
+		+ s.machine.position.work.z.toFixed(3)
+		+ (g_PendantSettings.axisCount == 4 ? ("," + s.machine.position.work.a.toFixed(3)) : "") + "|"
 		+ (g_TargetFeedRate != undefined ? g_TargetFeedRate : s.machine.overrides.feedOverride.toFixed(0)) + ","
 		+ (g_TargetSpeedRate != undefined ? g_TargetSpeedRate : s.machine.overrides.spindleOverride.toFixed(0)) + ","
 		+ s.machine.overrides.realFeed.toFixed(0) + ","
@@ -245,6 +248,10 @@ function GenerateStatus2String(s)
 		+ s.machine.position.offset.x.toFixed(3) + ","
 		+ s.machine.position.offset.y.toFixed(3) + ","
 		+ s.machine.position.offset.z.toFixed(3);
+	if (g_PendantSettings.axisCount == 4)
+	{
+		str += "," + s.machine.position.offset.a.toFixed(3);
+	}
 	return str;
 }
 
@@ -419,6 +426,21 @@ function PushSettings(pushRomSettings)
 		WritePort(str);
 	}
 
+	if (g_PendantSettings.axisCount == 4)
+	{
+		var str = "ANGLES:4";
+		var steps = g_PendantSettings.wheelStepsDeg;
+		for (var idx = 0; idx < steps.length; idx++)
+		{
+			str += "|" + (steps[idx]*100).toFixed(0);
+		}
+		WritePort(str);
+	}
+	else
+	{
+		WritePort("ANGLES:3");
+	}
+
 	// macros
 	var str = "";
 	var flags = 0;
@@ -462,6 +484,10 @@ function IsSafeAbsoluteMove(value, delta, axis, bInches)
 	var limits = GetSafeLimits(axis);
 	var min = limits.min;
 	var max = limits.max;
+	if (axis == 'A' && min == max)
+	{
+		return true;
+	}
 	if (min >= max) return false; // bad range
 	if (bInches)
 	{
@@ -482,6 +508,10 @@ function ClampSafeAbsoluteMove(value, delta, axis, bInches)
 	var limits = GetSafeLimits(axis);
 	var min = limits.min;
 	var max = limits.max;
+	if (axis == 'A' && min == max)
+	{
+		return value + delta;
+	}
 	if (min >= max) return value; // bad range
 	if (bInches)
 	{
@@ -535,7 +565,7 @@ function HandleJogCommand(command)
 	if (COM_LOG_LEVEL >= 2) { console.log("#JOG#", command); }
 	// 0LX - go to work zero on X
 	// RIGX0.010 - round X to 0.010 inches in global space (must be idle)
-	// WMX2*0.10 - wheel X by 2*0.10mm (must be idle or jogging)
+	// WMLX2*0.10 - wheel X by 2*0.10mm in local space (must be idle or jogging)
 	// JXY-2,3 - joystick is at -2,3
 	// NXY-2,3 - joystick is at -2,3 (nudge speed)
 
@@ -547,8 +577,8 @@ function HandleJogCommand(command)
 		if (space != 'L' && space != 'G') { return; }
 		var work = space == 'L';
 
-		var axis = command[2]; // X/Y/Z
-		if (axis < 'X' || axis > 'Z') { return; }
+		var axis = command[2]; // X/Y/Z/A
+		if ("XYZA".indexOf(axis) == -1) { return; }
 		var axisL = axis.toLowerCase();
 
 		var pos = laststatus.machine.position;
@@ -570,6 +600,7 @@ function HandleJogCommand(command)
 			case "X": feedT = grblParams.$110; break;
 			case "Y": feedT = grblParams.$111; break;
 			case "Z": feedT = grblParams.$112; break;
+			case "A": feedT = grblParams.$113; break;
 		}
 
 		// absolute move, work or machine, mm
@@ -585,15 +616,15 @@ function HandleJogCommand(command)
 		if (laststatus.comms.runStatus != "Idle") { return; }
 
 		var units = command[1]; // M or I
-		if (units != 'I' && units != 'M') { return; }
+		if ("IMA".indexOf(units) == -1) { return; }
 		var bInches = units == 'I';
 
 		var space = command[2]; // L or G
 		if (space != 'L' && space != 'G') { return; }
 		var work = space == 'L';
 
-		var axis = command[3]; // X/Y/Z
-		if (axis < 'X' || axis > 'Z') { return; }
+		var axis = command[3]; // X/Y/Z/A
+		if ("XYZA".indexOf(axis) == -1) { return; }
 		var axisL = axis.toLowerCase();
 
 		var step = Number(command.substring(4));
@@ -625,6 +656,7 @@ function HandleJogCommand(command)
 			case "X": feedT = grblParams.$110; break;
 			case "Y": feedT = grblParams.$111; break;
 			case "Z": feedT = grblParams.$112; break;
+			case "A": feedT = grblParams.$113; break;
 		}
 		feedT /= bInches ? 25.4 : 1;
 
@@ -638,20 +670,25 @@ function HandleJogCommand(command)
 	{
 		// hand wheel
 		var units = command[1]; // M or I
-		if (units != 'I' && units != 'M') { return; }
+		if ("IMA".indexOf(units) == -1) { return; }
 		var inches = units == 'I';
 
-		var axis = command[2]; // X/Y/Z
-		if (axis < 'X' || axis > 'Z') { return; }
+		var space = command[2]; // L or G
+		if (space != 'L' && space != 'G') { return; }
+		var work = space == 'L';
+
+		var axis = command[3]; // X/Y/Z
+		if ("XYZA".indexOf(axis) == -1) { return; }
 
 		var mul = command.indexOf('*');
-		var count = Number(command.substring(3, mul));
+		var count = Number(command.substring(4, mul));
 		var step = Number(command.substring(mul + 1));
 		if (count < 0)
 		{
 			count = -count;
 			step = -step;
 		}
+		step /= inches ? 25.4 : 1;
 
 		var speed;
 		switch (axis)
@@ -659,20 +696,24 @@ function HandleJogCommand(command)
 			case "X": speed = grblParams.$110; break;
 			case "Y": speed = grblParams.$111; break;
 			case "Z": speed = grblParams.$112; break;
+			case "A": speed = grblParams.$113; break;
 		}
-		speed *= (inches ? 1/25.4 : 1);
+
 		const limits = GetSafeLimits(axis);
+		const enableLimits = g_PendantSettings.safeLimitsEnabled && limits.max > limits.min;
 		const params = {
 			axis: axis.toLowerCase(),
-			min: limits.min * (inches ? 1/25.4 : 1),
-			max: limits.max * (inches ? 1/25.4 : 1),
-			enableLimits: g_PendantSettings.safeLimitsEnabled,
-			units: inches ? "in" : "mm",
-			count: count,
+			min: limits.min,
+			max: limits.max,
+			enableLimits: enableLimits,
+			work: work,
+			resolution: inches ? 0.0254 : 0.01,
 			step: step,
+			count: count,
 			speed: Math.min(speed, Math.abs(step) * 6000), // limit the speed to 100 steps per second (6000 steps per minute)
 			timeout: WHEEL_JOG_STOP_TIME,
 		};
+
 		socket.emit('mpgJog', params);
 		return;
 	}
@@ -1406,7 +1447,7 @@ function PendantComHandler(data)
 	if (data.startsWith("SET0:"))
 	{
 		if (COM_LOG_LEVEL >= 1) { console.log("#SET0#"); }
-		if (data.length >= 6 && data[5] >= 'X' && data[5] <= 'Z')
+		if (data.length >= 6 && "XYZA".indexOf(data[5]) != -1)
 		{
 			captureWcsHistory('Before <b>Pendant Set Zero</b>');
 			sendGcode("G10 P0 L20 " + data[5] + "0");
@@ -2097,6 +2138,21 @@ This setting can only be edited while the pendant is connected"></span></label>
   </div>
 
   <div class="row">
+    <label class="cell-sm-4">Show 4th Axis</label>
+    <div class="cell-sm-6">
+      <input id="PendantShow4Axis" type="checkbox" data-role="checkbox" data-style="2" onclick="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }" checked />
+    </div>
+  </div>
+
+  <div id="PendantStepsDeg" class="row mb-2">
+    <label class="cell-sm-4 pt-1">Wheel Click Steps (A axis)<span class="far fa-question-circle ml-1"
+      title="Type up to 5 values for the jog angle for each click of the wheel"></span></label>
+    <div class="cell-sm-6">
+      <input id="PendantWheelStepsDeg" data-role="input" data-clear-button="false" data-append="degrees/click" data-editable="true" />
+    </div>
+  </div>
+
+  <div class="row">
     <label class="cell-sm-4">Stop Spindle on Pause <span class="far fa-question-circle ml-1"
       title="Check if you want the spindle to automatically stop when a job is paused.
 This is done by triggering the door event. Resuming the job will automatically start the spindle, wait 4 seconds, then resume the motion.
@@ -2556,6 +2612,9 @@ window.SelectSettingsTab = function(index)
 	$('#PendantStepsMm').toggle(displayUnits != "inches");
 	$('#PendantStepsIn').toggle(displayUnits == "inches");
 
+	var show4axis = $('#PendantShow4Axis').prop('checked');
+	$('#PendantStepsDeg').toggle(show4axis);
+
 	$('#PendantTab2Content').toggle(tab2);
 	var zStyle = $('#PendantZStyle').val();
 	$('.pendant-z-single').toggle(zStyle != "default");
@@ -2650,6 +2709,7 @@ function ReadSettingsFromDialog(updateRomSettings)
 
 	g_PendantSettings.wheelStepsMm = $('#PendantWheelStepsMm').val().split(',').map((x) => Number(x));
 	g_PendantSettings.wheelStepsIn = $('#PendantWheelStepsIn').val().split(',').map((x) => Number(x));
+	g_PendantSettings.wheelStepsDeg = $('#PendantWheelStepsDeg').val().split(',').map((x) => Number(x));
 
 	g_PendantSettings.safeLimitsEnabled = $('#PendantSafeLimits').prop('checked');
 	g_PendantSettings.useSystemLimits = $('#PendantSystemLimits').prop('checked');
@@ -2658,6 +2718,7 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.safeLimitsZ = {min: Number($('#PendantMinZ').val()), max: Number($('#PendantMaxZ').val())};
 
 	// advanced settings
+	g_PendantSettings.axisCount = $('#PendantShow4Axis').prop('checked') ? 4 : 3;
 	g_PendantSettings.pauseSpindle = $('#PendantPauseSpindle').prop('checked');
 	g_PendantSettings.jobChecklist = $('#PendantJobChecklist').val();
 	g_PendantSettings.zProbe.style = $('#PendantZStyle').val();
@@ -2724,6 +2785,10 @@ function UpdateSettingsControls(settings, romSettings)
 	settings.wheelStepsIn.forEach(s => { steps = steps ? (steps + ", " + s.toFixed(3)) : s.toFixed(3); });
 	$('#PendantWheelStepsIn').val(steps);
 
+	steps = undefined;
+	settings.wheelStepsDeg.forEach(s => { steps = steps ? (steps + ", " + s.toFixed(3)) : s.toFixed(3); });
+	$('#PendantWheelStepsDeg').val(steps);
+
 	$('#PendantSafeLimits').prop('checked', settings.safeLimitsEnabled);
 	$('#PendantSystemLimits').prop('checked', settings.useSystemLimits);
 
@@ -2740,6 +2805,7 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantMaxZ').val(limits.max);
 
 	// advanced settings
+	$('#PendantShow4Axis').prop('checked', settings.axisCount == 4);
 	$('#PendantPauseSpindle').prop('checked', settings.pauseSpindle);
 	$('#PendantJobChecklist').val(settings.jobChecklist);
 

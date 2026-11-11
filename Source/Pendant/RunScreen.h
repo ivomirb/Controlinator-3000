@@ -51,19 +51,21 @@ void RunScreen::Draw( void )
 	const bool bDrawX = bDrawAll || pDrawState->x != g_WorkX;
 	const bool bDrawY = bDrawAll || pDrawState->y != g_WorkY;
 	const bool bDrawZ = bDrawAll || pDrawState->z != g_WorkZ;
+	const bool bDrawA = bDrawAll || pDrawState->a != g_WorkA;
 	bool bDrawFS = bDrawAll || pDrawState->f != g_FeedOverride || pDrawState->_override != m_Override;
 	bDrawFS = bDrawFS || pDrawState->s != g_SpeedOverride || pDrawState->_override != m_Override;
 	bDrawFS = bDrawFS || (m_Override != 0 && (pDrawState->rf != g_RealFeed || pDrawState->rs != g_RealSpeed));
 	pDrawState->x = g_WorkX;
 	pDrawState->y = g_WorkY;
 	pDrawState->z = g_WorkZ;
+	pDrawState->a = g_WorkA;
 	pDrawState->f = g_FeedOverride;
 	pDrawState->s = g_SpeedOverride;
 	pDrawState->rf = g_RealFeed;
 	pDrawState->rs = g_RealSpeed;
 	pDrawState->_override = m_Override;
 #else
-	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawFS = true, bDrawAll = true;
+	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawA = g_bShow4Axis, bDrawFS = true, bDrawAll = true;
 #endif
 
 	if (bDrawAll)
@@ -110,25 +112,35 @@ void RunScreen::Draw( void )
 		DrawUnusedButtons(unusedButtons);
 	}
 
+	const int8_t condensedRows[6] = {0, 14, 24, 34, 44, 55};
+	const int8_t *rows = g_bShow4Axis ? condensedRows : g_Rows;
+
 	if (bDrawX)
 	{
-		DrawText(0, 1, g_StrX);
+		DrawTextXY(1, rows[1], g_StrX);
 		int8_t len = PrintCoord(g_TextBuf, g_WorkX);
-		DrawText(len > 8 ? 1 : 2, 1, g_TextBuf);
+		DrawTextXY(len > 8 ? 8 : 15, rows[1], g_TextBuf);
 	}
 
 	if (bDrawY)
 	{
-		DrawText(0, 2, g_StrY);
+		DrawTextXY(1, rows[2], g_StrY);
 		int8_t len = PrintCoord(g_TextBuf, g_WorkY);
-		DrawText(len > 8 ? 1 : 2, 2, g_TextBuf);
+		DrawTextXY(len > 8 ? 8 : 15, rows[2], g_TextBuf);
 	}
 
 	if (bDrawZ)
 	{
-		DrawText(0, 3, g_StrZ);
+		DrawTextXY(1, rows[3], g_StrZ);
 		int8_t len = PrintCoord(g_TextBuf, g_WorkZ);
-		DrawText(len > 8 ? 1 : 2, 3, g_TextBuf);
+		DrawTextXY(len > 8 ? 8 : 15, rows[3], g_TextBuf);
+	}
+
+	if (bDrawA)
+	{
+		DrawTextXY(1, rows[4], g_StrA);
+		int8_t len = PrintCoord(g_TextBuf, g_WorkA);
+		DrawTextXY(len > 8 ? 8 : 15, rows[4], g_TextBuf);
 	}
 
 	if (bDrawFS)

@@ -1,7 +1,7 @@
 const int WHEEL_UPDATE_TIME = 100; // don't send wheel updates more than once every 100ms
 const int JOYSTICK_UPDATE_TIME = 10; // don't send joystick updates more than once every 10ms
 
-const char g_AxisName[5] = {' ', 'X', 'Y', ' ', 'Z'};
+const char g_AxisName[9] = {' ', 'X', 'Y', ' ', 'Z', ' ', ' ', ' ', 'A'};
 
 #if USE_SHARED_STATE
 JogScreen::ActiveState *JogScreen::GetActiveState( void )
@@ -36,6 +36,10 @@ JogScreen::JogScreen( void )
 	m_StepRateCount = 2;
 	m_StepRates[0] = 10;
 	m_StepRates[1] = 100;
+
+	m_AngleRateCount = 2;
+	m_AngleRates[0] = 10;
+	m_AngleRates[1] = 100;
 }
 
 void JogScreen::Draw( void )
@@ -64,30 +68,52 @@ void JogScreen::Draw( void )
 	const bool bDrawX = bDrawAll || pDrawState->wx != g_WorkX || pDrawState->ox != g_OffsetX;
 	const bool bDrawY = bDrawAll || pDrawState->wy != g_WorkY || pDrawState->oy != g_OffsetY;
 	const bool bDrawZ = bDrawAll || pDrawState->wz != g_WorkZ || pDrawState->oz != g_OffsetZ;
+	const bool bDrawA = g_bShow4Axis && (bDrawAll || pDrawState->wa != g_WorkA || pDrawState->oa != g_OffsetA);
 	pDrawState->wx = g_WorkX;
 	pDrawState->ox = g_OffsetX;
 	pDrawState->wy = g_WorkY;
 	pDrawState->oy = g_OffsetY;
 	pDrawState->wz = g_WorkZ;
 	pDrawState->oz = g_OffsetZ;
+	pDrawState->wa = g_WorkA;
+	pDrawState->oa = g_OffsetA;
 #else
-	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawAll = true;
+	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawA = g_bShow4Axis, bDrawAll = true;
 #endif
+	const int BUTTON_STEP = g_bShow4Axis ? BUTTON_STEP4 : BUTTON_STEP3;
 
 	if (bDrawAll)
 	{
 		DrawMachineStatus(g_StrJOG, 3);
-		DrawText(13, 1, g_bWorkSpace ? g_StrWCS : g_StrMCS);
+		if (!g_bShow4Axis)
+		{
+			DrawText(13, 1, g_bWorkSpace ? g_StrWCS : g_StrMCS);
+		}
 
 		if ((pState->m_Axis & (pState->m_Axis-1)) == 0) // only one axis is selected
 		{
-			uint16_t step = m_StepRates[m_StepIndex];
 			if (pState->m_bShowAlign)
 			{
 				DrawButton(BUTTON_STEP, ROMSTR("Align"), 5, true);
 			}
+			else if (g_bShow4Axis)
+			{
+				int8_t len;
+				if (pState->m_Axis == 8)
+				{
+					uint16_t step = m_AngleRates[m_AngleIndex];
+					len = Sprintf(g_TextBuf, STRING_PLUSMINUS "%d.%02d", step/100, step%100);
+				}
+				else
+				{
+					uint16_t step = m_StepRates[m_StepIndex];
+					len = g_bShowInches ? Sprintf(g_TextBuf, STRING_PLUSMINUS "%d.%03d", step/1000, step%1000) : Sprintf(g_TextBuf, STRING_PLUSMINUS "%d.%02d", step/100, step%100);
+				}
+				DrawButton(BUTTON_STEP, g_TextBuf, len, false);
+			}
 			else
 			{
+				uint16_t step = m_StepRates[m_StepIndex];
 				int8_t len = g_bShowInches ? Sprintf(g_TextBuf, "Step %1d.%03d", step/1000, step%1000) : Sprintf(g_TextBuf, "Step %2d.%02d", step/100, step%100);
 				DrawButton(BUTTON_STEP, g_TextBuf, len, false);
 			}
@@ -189,6 +215,27 @@ void JogScreen::Draw( void )
 			}
 		}
 	}
+
+	if (bDrawA)
+	{
+		int8_t len = PrintA(g_TextBuf);
+		if (pState->m_Axis & 8)
+		{
+			SetDrawColor(1);
+			DrawBox(0, g_Rows[4] - 1, 8, 10);
+			SetDrawColor(0);
+			DrawText(0, 4, g_StrBoldA);
+			SetDrawColor(1);
+			DrawTextBold(len > 8 ? 1 : 2, 4, g_TextBuf);
+		}
+		else
+		{
+			SetDrawColor(1);
+			DrawText(0, 4, g_StrA);
+			DrawText(len > 8 ? 1 : 2, 4, g_TextBuf);
+		}
+	}
+
 }
 
 void JogScreen::Update( unsigned long time )
@@ -199,6 +246,8 @@ void JogScreen::Update( unsigned long time )
 		CloseScreen();
 		return;
 	}
+
+	const int BUTTON_STEP = g_bShow4Axis ? BUTTON_STEP4 : BUTTON_STEP3;
 
 	// must be before setting m_LastInputTime, otherwise the STOP button will dismiss itself
 	pState->m_bShowStop = g_bCanShowStop && (time - pState->m_LastInputTime > SHOW_STOP_TIME); // half second of no idle and no input
@@ -241,11 +290,15 @@ void JogScreen::Update( unsigned long time )
 	{
 		SetAxis(4);
 	}
+	else if (g_bShow4Axis && button == BUTTON_A)
+	{
+		SetAxis(8);
+	}
 	else if (button == BUTTON_JOYSTICK)
 	{
 		SetAxis(3);
 	}
-	else if (button == BUTTON_WCS)
+	else if (!g_bShow4Axis && button == BUTTON_WCS)
 	{
 		g_bWorkSpace = !g_bWorkSpace;
 	}
@@ -297,20 +350,33 @@ void JogScreen::Update( unsigned long time )
 		{
 			// Step button held down for full time, align to the step rate
 			Serial.print(g_StrJOG2);
-			uint16_t step = m_StepRates[m_StepIndex];
-			if (g_bShowInches)
+			if (pState->m_Axis == 8)
 			{
+				uint16_t step = m_AngleRates[m_AngleIndex];
+				Sprintf(g_TextBuf, "AA%c%c%d.%02d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], step/100, step%100);
+			}
+			else if (g_bShowInches)
+			{
+				uint16_t step = m_StepRates[m_StepIndex];
 				Sprintf(g_TextBuf, "AI%c%c%d.%03d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], step/1000, step%1000);
 			}
 			else
 			{
+				uint16_t step = m_StepRates[m_StepIndex];
 				Sprintf(g_TextBuf, "AM%c%c%d.%02d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], step/100, step%100);
 			}
 			Serial.println(g_TextBuf);
 		}
 		else if (!bShowAlign && TestBit(g_ButtonUnclick, BUTTON_STEP))
 		{
-			m_StepIndex = (m_StepIndex + 1) % m_StepRateCount;
+			if (pState->m_Axis == 8)
+			{
+				m_AngleIndex = (m_AngleIndex + 1) % m_AngleRateCount;
+			}
+			else
+			{
+				m_StepIndex = (m_StepIndex + 1) % m_StepRateCount;
+			}
 		}
 
 		if (pState->m_bShowActions && g_MachineStatus == STATUS_IDLE)
@@ -342,14 +408,20 @@ void JogScreen::Update( unsigned long time )
 				pState->m_LastWheelTime = time;
 				if (g_MachineStatus == STATUS_IDLE || g_MachineStatus == STATUS_JOG)
 				{
-					uint16_t step = m_StepRates[m_StepIndex];
-					if (g_bShowInches)
+					if (pState->m_Axis == 8)
 					{
-						Sprintf(g_TextBuf, "WI%c%d*%d.%03d", g_AxisName[pState->m_Axis], wheel, step/1000, step%1000);
+						uint16_t step = m_AngleRates[m_AngleIndex];
+						Sprintf(g_TextBuf, "WA%c%c%d*%d.%02d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], wheel, step/100, step%100);
+					}
+					else if (g_bShowInches)
+					{
+						uint16_t step = m_StepRates[m_StepIndex];
+						Sprintf(g_TextBuf, "WI%c%c%d*%d.%03d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], wheel, step/1000, step%1000);
 					}
 					else
 					{
-						Sprintf(g_TextBuf, "WM%c%d*%d.%02d", g_AxisName[pState->m_Axis], wheel, step/100, step%100);
+						uint16_t step = m_StepRates[m_StepIndex];
+						Sprintf(g_TextBuf, "WM%c%c%d*%d.%02d", g_bWorkSpace ? 'L' : 'G', g_AxisName[pState->m_Axis], wheel, step/100, step%100);
 					}
 					Serial.print(g_StrJOG2);
 					Serial.println(g_TextBuf);
@@ -447,6 +519,31 @@ void JogScreen::ParseJogSteps( const char *str )
 	if (m_StepIndex > m_StepRateCount - 1)
 	{
 		m_StepIndex = m_StepRateCount - 1;
+	}
+#if PARTIAL_SCREEN_UPDATE
+	s_DrawState.bDrawAll = true;
+#endif
+}
+
+// Parses the angle step rate string from the PC - |<rate1>|<rate2> ... - up to 5
+void JogScreen::ParseAngleSteps( const char *str )
+{
+	m_AngleRateCount = 0;
+	while (str && m_AngleRateCount < 5)
+	{
+		m_AngleRates[m_AngleRateCount++] = atol(str + 1);
+		str = strchr(str + 1, '|');
+	}
+	if (m_AngleRateCount == 0)
+	{
+		m_AngleRates[0] = 10;
+		m_AngleRates[1] = 100;
+		m_AngleRateCount = 2;
+	}
+
+	if (m_AngleIndex > m_AngleRateCount - 1)
+	{
+		m_AngleIndex = m_AngleRateCount - 1;
 	}
 #if PARTIAL_SCREEN_UPDATE
 	s_DrawState.bDrawAll = true;

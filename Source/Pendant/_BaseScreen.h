@@ -41,6 +41,7 @@ protected:
 	static int8_t PrintX( char *buf );
 	static int8_t PrintY( char *buf );
 	static int8_t PrintZ( char *buf );
+	static int8_t PrintA( char *buf );
 
 	// Draws the status line at the top of the screen
 #if DRAW_SCREEN_TITLE
@@ -76,7 +77,7 @@ protected:
 		int8_t jobProgress;
 		bool bDrawAll;
 
-		uint8_t custom[32]; // for use by the current screen, initialized to 0xFF
+		uint8_t custom[40]; // for use by the current screen, initialized to 0xFF
 	};
 #else
 	struct DrawStateBase
@@ -191,6 +192,11 @@ int8_t BaseScreen::PrintY( char *buf )
 int8_t BaseScreen::PrintZ( char *buf )
 {
 	return PrintCoord(buf, g_bWorkSpace ? g_WorkZ : (g_WorkZ + g_OffsetZ));
+}
+
+int8_t BaseScreen::PrintA( char *buf )
+{
+	return PrintCoord(buf, g_bWorkSpace ? g_WorkA : (g_WorkA + g_OffsetA));
 }
 
 #if DRAW_SCREEN_TITLE

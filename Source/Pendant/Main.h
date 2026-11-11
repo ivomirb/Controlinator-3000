@@ -38,10 +38,11 @@ unsigned long g_LastBusyTime;
 bool g_bCanShowStop;
 
 // coordinate systems
-float g_WorkX, g_WorkY, g_WorkZ;
-float g_OffsetX, g_OffsetY, g_OffsetZ; // machine = work + offset
+float g_WorkX, g_WorkY, g_WorkZ, g_WorkA;
+float g_OffsetX, g_OffsetY, g_OffsetZ, g_OffsetA; // machine = work + offset
 bool g_bWorkSpace = true;
 bool g_bShowInches = true;
+bool g_bShow4Axis = false;
 bool g_bJobRunning = false;
 bool g_bRecentlyHomed = false;
 bool g_bProbeContact = true;
@@ -171,13 +172,17 @@ const char *ProcessSerial( void )
 }
 
 // Parses the STATUS: string from the PC
-// string format: <status>|workX,workY,workZ|feed%,rpm%,realFeed,realRpm
+// string format: <status>|workX,workY,workZ[,workA]|feed%,rpm%,realFeed,realRpm
 void ParseStatus( const char *status )
 {
 	g_MachineStatus = (MachineStatus)atol(status); status = strchr(status, '|') + 1;
 	g_WorkX = atof(status); status = strchr(status, ',') + 1;
 	g_WorkY = atof(status); status = strchr(status, ',') + 1;
-	g_WorkZ = atof(status); status = strchr(status, '|') + 1;
+	g_WorkZ = atof(status);
+	const char *next1 = strchr(status, ',');
+	const char *next2 = strchr(status, '|');
+	g_WorkA = (next1 < next2) ? atof(next1 + 1) : 0;
+	status = next2 + 1;
 	g_FeedOverride = atoi(status); status = strchr(status, ',') + 1;
 	g_SpeedOverride = atoi(status); status = strchr(status, ',') + 1;
 	g_RealFeed = atoi(status); status = strchr(status, ',') + 1;
@@ -202,6 +207,8 @@ void ParseStatus2( const char *status )
 	g_OffsetX = atof(status); status = strchr(status, ',') + 1;
 	g_OffsetY = atof(status); status = strchr(status, ',') + 1;
 	g_OffsetZ = atof(status);
+	const char *next = strchr(status, ',');
+	g_OffsetA = next ? atof(next + 1) : 0;
 }
 
 // Parses the UNITS: string from the PC
@@ -211,6 +218,22 @@ void ParseUnits( const char *units )
 	g_bShowInches = *units == 'I';
 	units = strchr(units, '|');
 	g_JogScreen.ParseJogSteps(units);
+}
+
+// Parses the ANGLES: string from the PC
+// string format: <3/4>|<angle1>|<angle2>| ... up to 5 angle values
+void ParseAngles( const char *angles )
+{
+	g_bShow4Axis = angles[0] == '4';
+	if (g_bShow4Axis)
+	{
+		angles = strchr(angles, '|');
+		g_JogScreen.ParseAngleSteps(angles);
+	}
+	else
+	{
+		g_JogScreen.ParseAngleSteps("");
+	}
 }
 
 // Handles the PEN handshake prompt from the PC. responds with DENT:<version> and the current ROM settings
@@ -284,6 +307,11 @@ void ProcessCommand( const char *command, unsigned long time )
 	if (strncmp(command, "UNITS:", 6) == 0)
 	{
 		ParseUnits(command + 6);
+		return;
+	}
+	if (strncmp(command, "ANGLES:", 7) == 0)
+	{
+		ParseAngles(command + 7);
 		return;
 	}
 	if (strncmp(command, "MACROS:", 7) == 0)

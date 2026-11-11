@@ -163,6 +163,9 @@ public:
 	// Parses the jog step rate string from the PC - |<rate1>|<rate2> ... - up to 5
 	void ParseJogSteps( const char *str );
 
+	// Parses the angle step rate string from the PC - |<rate1>|<rate2> ... - up to 5
+	void ParseAngleSteps( const char *str );
+
 private:
 	static const uint16_t JOG_INACTIVITY_TIMER = 10000; // 10 seconds of inactivity will exit the jog screen
 
@@ -176,7 +179,7 @@ private:
 		unsigned long m_StepHoldTime; // duration of holding the Step button
 		unsigned long m_LastWheelTime; // time of the last sent wheel message
 		unsigned long m_LastJoystickTime; // time of last sent joystick message
-		uint8_t m_Axis : 4; // current axis - one bit for X, Y and Z
+		uint8_t m_Axis : 4; // current axis - one bit for X, Y,Z and A
 		uint8_t m_bShowStop : 1; // show the stop button
 		uint8_t m_bShowActions : 1; // show the actions to do during idle
 		uint8_t m_bShowZUp : 1; // show Z Up instead of Z
@@ -199,12 +202,18 @@ private:
 	uint8_t m_StepRateCount : 3;
 	uint16_t m_StepRates[5];
 
+	uint8_t m_AngleIndex : 3; // current angle rate index
+	uint8_t m_AngleRateCount : 3;
+	uint16_t m_AngleRates[5];
+
 	enum
 	{
 		BUTTON_X = 0,
 		BUTTON_Y = 1,
 		BUTTON_Z = 2,
-		BUTTON_STEP = 3,
+		BUTTON_A = 3,
+		BUTTON_STEP3 = 3,
+		BUTTON_STEP4 = 4,
 		BUTTON_WCS = 4,
 		BUTTON_GOTO0 = 5,
 		BUTTON_STOP = 5,
@@ -219,8 +228,8 @@ private:
 #if PARTIAL_SCREEN_UPDATE
 	struct DrawState
 	{
-		float wx, wy, wz;
-		float ox, oy, oz;
+		float wx, wy, wz, wa;
+		float ox, oy, oz, oa;
 		bool bWorkSpace;
 		bool bShowInches;
 		uint8_t axis : 4;
@@ -275,6 +284,7 @@ private:
 		BUTTON_Y = 1,
 		BUTTON_Z = 2,
 		BUTTON_HOME = 3,
+		BUTTON_A = 3,
 		BUTTON_WCS = 4,
 		BUTTON_PROBE = 5,
 		BUTTON_STOP = 5,
@@ -285,8 +295,8 @@ private:
 #if PARTIAL_SCREEN_UPDATE
 	struct DrawState
 	{
-		float wx, wy, wz;
-		float ox, oy, oz;
+		float wx, wy, wz, wa;
+		float ox, oy, oz, oa;
 		bool bWorkSpace;
 		bool bShowInches;
 		bool bCanShowStop;
@@ -381,7 +391,7 @@ private:
 #if PARTIAL_SCREEN_UPDATE
 	struct DrawState
 	{
-		float x, y, z;
+		float x, y, z, a;
 		uint16_t f, s;
 		uint16_t rf, rs;
 		bool bShowInches;

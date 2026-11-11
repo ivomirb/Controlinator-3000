@@ -18,14 +18,17 @@ void MainScreen::Draw( void )
 	const bool bDrawX = bDrawAll || pDrawState->wx != g_WorkX || pDrawState->ox != g_OffsetX;
 	const bool bDrawY = bDrawAll || pDrawState->wy != g_WorkY || pDrawState->oy != g_OffsetY;
 	const bool bDrawZ = bDrawAll || pDrawState->wz != g_WorkZ || pDrawState->oz != g_OffsetZ;
+	const bool bDrawA = g_bShow4Axis && (bDrawAll || pDrawState->wa != g_WorkA || pDrawState->oa != g_OffsetA);
 	pDrawState->wx = g_WorkX;
 	pDrawState->ox = g_OffsetX;
 	pDrawState->wy = g_WorkY;
 	pDrawState->oy = g_OffsetY;
 	pDrawState->wz = g_WorkZ;
 	pDrawState->oz = g_OffsetZ;
+	pDrawState->wa = g_WorkA;
+	pDrawState->oa = g_OffsetA;
 #else
-	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawAll = true;
+	const bool bDrawX = true, bDrawY = true, bDrawZ = true, bDrawA = g_bShow4Axis, bDrawAll = true;
 #endif
 
 	if (bDrawAll)
@@ -34,6 +37,10 @@ void MainScreen::Draw( void )
 		DrawText(0, 1, g_StrX);
 		DrawText(0, 2, g_StrY);
 		DrawText(0, 3, g_StrZ);
+		if (g_bShow4Axis)
+		{
+			DrawText(0, 4, g_StrA);
+		}
 
 		DrawButton(BUTTON_WCS, g_bWorkSpace ? g_StrWCS : g_StrMCS, 5, false);
 		if (g_MachineStatus == STATUS_IDLE)
@@ -41,11 +48,14 @@ void MainScreen::Draw( void )
 			DrawButton(BUTTON_PROBE, ROMSTR("Probe>"), 6, false);
 			DrawButton(BUTTON_JOB, g_StrJob, 4, false);
 			DrawButton(BUTTON_MACROS, ROMSTR("Macros>"), 7, false);
-			DrawButton(BUTTON_HOME, ROMSTR("Home"), 4, true);
+			if (!g_bShow4Axis)
+			{
+				DrawButton(BUTTON_HOME, ROMSTR("Home"), 4, true);
+			}
 		}
 		else
 		{
-			uint8_t unusedButtons = 0xE8;
+			uint8_t unusedButtons = g_bShow4Axis ? 0xE0 : 0xE8;
 			if (g_bCanShowStop)
 			{
 				DrawButton(BUTTON_STOP, g_StrSTOP, 4, false);
@@ -76,6 +86,11 @@ void MainScreen::Draw( void )
 		int8_t len = PrintZ(g_TextBuf);
 		DrawText(len > 8 ? 1 : 2, 3, g_TextBuf);
 	}
+	if (bDrawA)
+	{
+		int8_t len = PrintA(g_TextBuf);
+		DrawText(len > 8 ? 1 : 2, 4, g_TextBuf);
+	}
 }
 
 void MainScreen::Update( unsigned long time )
@@ -102,12 +117,17 @@ void MainScreen::Update( unsigned long time )
 			g_JogScreen.Activate(time);
 			g_JogScreen.SetAxis(4);
 		}
+		else if (g_bShow4Axis && button == BUTTON_A)
+		{
+			g_JogScreen.Activate(time);
+			g_JogScreen.SetAxis(8);
+		}
 		else if (button == BUTTON_JOYSTICK)
 		{
 			g_JogScreen.Activate(time);
 			g_JogScreen.SetAxis(3);
 		}
-		else if (TestBit(g_ButtonHold, BUTTON_HOME))
+		else if (!g_bShow4Axis && TestBit(g_ButtonHold, BUTTON_HOME))
 		{
 			Serial.println(ROMSTR("HOME"));
 		}
