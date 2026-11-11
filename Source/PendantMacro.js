@@ -688,7 +688,7 @@ function HandleJogCommand(command)
 			count = -count;
 			step = -step;
 		}
-		step /= inches ? 25.4 : 1;
+		step *= inches ? 25.4 : 1;
 
 		var speed;
 		switch (axis)
@@ -2756,20 +2756,19 @@ function ReadSettingsFromDialog(updateRomSettings)
 	PushSettings(updateRomSettings);
 }
 
+function UpdateSelectControl(name, value)
+{
+	const control = $(name);
+	const select = control.data('select');
+	(select || control).val(value);
+}
+
 // Updates the settings controls based on the specified collection
 function UpdateSettingsControls(settings, romSettings)
 {
 	// main settings
 	$('#PendantAutoConnect').prop('checked', settings.autoConnect);
-	var select = $('#PendantDisplayUnits').data('select');
-	if (select)
-	{
-		select.val(settings.displayUnits);
-	}
-	else
-	{
-		$('#PendantDisplayUnits').val(settings.displayUnits);
-	}
+	UpdateSelectControl('#PendantDisplayUnits', settings.displayUnits);
 
 	var steps = undefined;
 	settings.wheelStepsMm.forEach(s => { steps = steps ? (steps + ", " + s.toFixed(2)) : s.toFixed(2); });
@@ -2783,7 +2782,7 @@ function UpdateSettingsControls(settings, romSettings)
 	settings.wheelStepsDeg.forEach(s => { steps = steps ? (steps + ", " + s.toFixed(3)) : s.toFixed(3); });
 	$('#PendantWheelStepsDeg').val(steps);
 
-	$('#PendantSafeLimits').val(settings.safeLimits);
+	UpdateSelectControl('#PendantSafeLimits', settings.safeLimits);
 
 	var limits = GetSettingsSafeLimits(settings, 'X');
 	$('#PendantMinX').val(limits.min);
@@ -2806,15 +2805,7 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantPauseSpindle').prop('checked', settings.pauseSpindle);
 	$('#PendantJobChecklist').val(settings.jobChecklist);
 
-	var select = $('#PendantZStyle').data('select');
-	if (select)
-	{
-		select.val(settings.zProbe.style);
-	}
-	else
-	{
-		$('#PendantZStyle').val(settings.zProbe.style);
-	}
+	UpdateSelectControl('#PendantZStyle', settings.zProbe.style);
 
  	if (settings.zProbe.thickness == undefined)
 	{
@@ -2841,16 +2832,7 @@ function UpdateSettingsControls(settings, romSettings)
 	$('#PendantZRetract2T').val(settings.zProbe.retract2.travel);
 	$('#PendantZRetract2F').val(settings.zProbe.retract2.feed);
 
-
-	select = $('#PendantToolStyle').data('select');
-	if (select)
-	{
-		select.val(settings.toolProbe.style);
-	}
-	else
-	{
-		$('#PendantToolStyle').val(settings.toolProbe.style);
-	}
+	UpdateSelectControl('#PendantToolStyle', settings.toolProbe.style);
 
 	$('#PendantToolX').val(settings.toolProbe.location.X);
 	$('#PendantToolY').val(settings.toolProbe.location.Y);

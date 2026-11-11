@@ -139,7 +139,7 @@ void RunScreen::Draw( void )
 	if (bDrawA)
 	{
 		DrawTextXY(1, rows[4], g_StrA);
-		int8_t len = PrintCoord(g_TextBuf, g_WorkA);
+		int8_t len = PrintCoordA(g_TextBuf, g_WorkA);
 		DrawTextXY(len > 8 ? 8 : 15, rows[4], g_TextBuf);
 	}
 

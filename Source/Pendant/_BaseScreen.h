@@ -36,6 +36,7 @@ protected:
 
 	// Prints a value to the buffer, using the curren mm/inch setting
 	static int8_t PrintCoord( char *buf, float val );
+	static int8_t PrintCoordA( char *buf, float val );
 
 	// Print X/Y/Z to the buffer. Uses the current WCS/MCS and mm/inch settings
 	static int8_t PrintX( char *buf );
@@ -179,6 +180,13 @@ int8_t BaseScreen::PrintCoord( char *buf, float val )
 	return (int8_t)Strlen(buf);
 }
 
+int8_t BaseScreen::PrintCoordA( char *buf, float val )
+{
+	if (val < 0 && val > -0.005) val = 0;
+	dtostrf(val, 8, 2, buf);
+	return (int8_t)Strlen(buf);
+}
+
 int8_t BaseScreen::PrintX( char *buf )
 {
 	return PrintCoord(buf, g_bWorkSpace ? g_WorkX : (g_WorkX + g_OffsetX));
@@ -196,7 +204,7 @@ int8_t BaseScreen::PrintZ( char *buf )
 
 int8_t BaseScreen::PrintA( char *buf )
 {
-	return PrintCoord(buf, g_bWorkSpace ? g_WorkA : (g_WorkA + g_OffsetA));
+	return PrintCoordA(buf, g_bWorkSpace ? g_WorkA : (g_WorkA + g_OffsetA));
 }
 
 #if DRAW_SCREEN_TITLE
