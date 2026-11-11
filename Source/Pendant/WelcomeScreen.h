@@ -43,4 +43,12 @@ void WelcomeScreen::Update( unsigned long time )
 	{
 		CloseScreen();
 	}
+
+#ifdef ARDUINO_NANO_R4
+	int8_t button = GetCurrentButton();
+	if (button == BUTTON_ABORT)
+	{
+		NVIC_SystemReset();
+	}
+#endif
 }

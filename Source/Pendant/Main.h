@@ -377,8 +377,22 @@ void setup( void )
 	pinMode(4, INPUT);
 	pinMode(5, INPUT);
 #endif
-	Serial.begin(PENDANT_BAUD_RATE);
 	InitializeInput();
+#ifdef ARDUINO_NANO_R4
+	if (TestBit(ReadButtons(), BUTTON_ABORT))
+	{
+		// if the Abort button is pressed during startup, enter an infinite loop and wait for upload.
+		// Otherwise the running software interferes with the upload (probably related to Serial, but not sure)
+		InitializeGraphics();
+		DrawText(0, 0, "READY FOR UPLOAD");
+		u8g2_SendBuffer(&u8g2);
+		while (1)
+		{
+			delay(10);
+		}
+	}
+#endif
+	Serial.begin(PENDANT_BAUD_RATE);
 	InitializeStatusStrings();
 	ReadRomSettings();
 	InitializeGraphics();

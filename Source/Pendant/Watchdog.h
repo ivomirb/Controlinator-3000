@@ -58,16 +58,19 @@ CrashReason InitializeWatchdog( void )
 
 #elif defined(ARDUINO_NANO_R4)
 
-	rstr0 = R_SYSTEM->RSTSR0;
-	rstr1 = R_SYSTEM->RSTSR1;
 	if (R_SYSTEM->RSTSR0 & R_SYSTEM_RSTSR0_LVD0RF_Msk)
 	{
 		reason = CRASH_BROWNOUT;
+	}
+	else if (R_SYSTEM->RSTSR1 & R_SYSTEM_RSTSR1_SWRF_Msk)
+	{
+		reason = CRASH_NONE;
 	}
 	else if (R_SYSTEM->RSTSR1 & R_SYSTEM_RSTSR1_WDTRF_Msk)
 	{
 		reason = CRASH_WATCHDOG;
 	}
+	R_SYSTEM->RSTSR1 = 0;
 
 	WDT.begin(1000);
 
