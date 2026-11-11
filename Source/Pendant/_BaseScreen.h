@@ -22,11 +22,9 @@ public:
 
 	static bool IsDrawAll( void ) { return s_DrawState.bDrawAll; }
 
-#if U8G2_FULL_BUFFER
 	static void ClearScreen( void );
 #if PARTIAL_SCREEN_UPDATE
 	static void UpdateScreen( void );
-#endif
 #endif
 
 	static BaseScreen *s_pCurrentScreen;
@@ -118,7 +116,6 @@ void BaseScreen::Activate( unsigned long time )
 	s_pCurrentScreen = this;
 }
 
-#if U8G2_FULL_BUFFER
 void BaseScreen::ClearScreen( void )
 {
 #if PARTIAL_SCREEN_UPDATE
@@ -146,7 +143,6 @@ void BaseScreen::UpdateScreen( void )
 	s_DrawState.jobProgress = g_JobProgress;
 	s_DrawState.bDrawAll = false;
 }
-#endif
 #endif
 
 int8_t BaseScreen::GetCurrentButton( void )

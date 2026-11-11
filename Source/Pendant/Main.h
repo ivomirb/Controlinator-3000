@@ -71,20 +71,14 @@ BaseScreen *BaseScreen::s_pCurrentScreen;
 #include "_ScreenClasses.h"
 
 AlarmScreen g_AlarmScreen;
-#ifndef DISABLE_CALIBRATION_SCREEN
 CalibrationScreen g_CalibrationScreen;
-#endif
 DialogScreen g_DialogScreen;
 JogScreen g_JogScreen;
-#ifndef DISABLE_MACRO_SCREEN
 MacroScreen g_MacroScreen;
-#endif
 MainScreen g_MainScreen;
 ProbeMenuScreen g_ProbeMenuScreen;
 RunScreen g_RunScreen;
-#ifndef DISABLE_WELCOME_SCREEN
 WelcomeScreen g_WelcomeScreen;
-#endif
 ZProbeScreen g_ZProbeScreen;
 
 // This is outside of _BaseScreen.h because it needs access to the other screens
@@ -94,9 +88,7 @@ void BaseScreen::CloseScreen( void )
 	{
 		if (!g_bConnected || g_MachineStatus == STATUS_DISCONNECTED)
 		{
-#ifndef DISABLE_WELCOME_SCREEN
 			g_WelcomeScreen.Activate(g_CurrentTime);
-#endif
 		}
 		else if (g_MachineStatus == STATUS_ALARM)
 		{
@@ -316,17 +308,13 @@ void ProcessCommand( const char *command, unsigned long time )
 	}
 	if (strncmp(command, "MACROS:", 7) == 0)
 	{
-#ifndef DISABLE_MACRO_SCREEN
 		g_MacroScreen.ParseMacros(command + 7);
-#endif
 		return;
 	}
 
 	if (strncmp(command, "CAL:", 4) == 0)
 	{
-#ifndef DISABLE_CALIBRATION_SCREEN
 		g_CalibrationScreen.ProcessCommand(command + 4, time);
-#endif
 		return;
 	}
 
@@ -405,13 +393,11 @@ void setup( void )
 		g_bWDTCrash = true;
 		HandleHandshake();
 		char dialogText[60];
-#if !defined(__AVR_ATmega328P__)
 		if (crash == CRASH_BROWNOUT)
 		{
 			strcpy_P(dialogText, PSTR("10001|CRASH DETECTED|Brownout caused|a crash.||,DISMISS"));
 		}
 		else
-#endif
 		{
 			strcpy_P(dialogText, PSTR("10001|CRASH DETECTED|Watchdog detected|a crash.||,DISMISS"));
 		}
@@ -420,12 +406,10 @@ void setup( void )
 	}
 #endif
 
-#ifndef DISABLE_WELCOME_SCREEN
 	if (!g_bWDTCrash)
 	{
 		g_WelcomeScreen.Activate(g_CurrentTime);
 	}
-#endif
 }
 
 int g_Frame = 0;
@@ -493,19 +477,13 @@ void loop( void )
 	}
 	else if (!g_bConnected || g_MachineStatus == STATUS_DISCONNECTED)
 	{
-#ifndef DISABLE_CALIBRATION_SCREEN
 		if (g_CalibrationScreen.IsActive())
 		{
 			bScreenSelected = false;
 		}
 		else
-#endif
 		{
-#ifndef DISABLE_WELCOME_SCREEN
 			g_WelcomeScreen.Activate(time);
-#else
-			g_MainScreen.Activate(time);
-#endif
 		}
 	}
 	else if (g_MachineStatus == STATUS_ALARM)
@@ -548,18 +526,15 @@ void loop( void )
 		}
 	}
 
-#ifndef DISABLE_CALIBRATION_SCREEN
 	if (g_CalibrationScreen.ShouldSendXY())
 	{
 		g_CalibrationScreen.SendXYUpdate(false);
 	}
-#endif
 
 	// update current screen
 	BaseScreen::s_pCurrentScreen->Update(time);
 
 	// draw
-#if U8G2_FULL_BUFFER
 	BaseScreen::ClearScreen();
 	SetDrawColor(1);
 	BaseScreen::s_pCurrentScreen->Draw();
@@ -567,15 +542,6 @@ void loop( void )
 	BaseScreen::UpdateScreen();
 #else
 	u8g2_SendBuffer(&u8g2);
-#endif
-#else
-	u8g2_FirstPage(&u8g2);
-	do
-	{
-		SetDrawColor(1);
-		BaseScreen::s_pCurrentScreen->Draw();
-	}
-	while (u8g2_NextPage(&u8g2));
 #endif
 
 #ifndef EMULATOR

@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <EEPROM.h>
-#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega4808__) || defined(__AVR_ATmega4809__)
+#if defined(__AVR_ATmega4808__) || defined(__AVR_ATmega4809__)
 #include <avr/wdt.h>
 #elif defined(ARDUINO_NANO_R4)
 #include <WDT.h>

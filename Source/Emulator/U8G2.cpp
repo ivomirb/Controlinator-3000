@@ -41,7 +41,6 @@ void u8g2_t::sendBuffer( void )
 	memcpy(g_ScreenCopy, g_Screen, sizeof(g_Screen));
 }
 
-#if U8G2_FULL_BUFFER
 void u8g2_t::updateDisplayArea( int tx, int ty, int tw, int th )
 {
 	for (int y = ty * 8; y < (ty + th) * 8; y++)
@@ -49,4 +48,3 @@ void u8g2_t::updateDisplayArea( int tx, int ty, int tw, int th )
 		memcpy(g_ScreenCopy[y] + tx * 8, g_Screen[y] + tx * 8, tw * 8);
 	}
 }
-#endif

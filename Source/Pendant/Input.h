@@ -199,7 +199,7 @@ int16_t EncoderDrainValue( void )
 
 #else
 
-#if defined(__AVR_ATmega328P__) || defined(__AVR_ATmega4808__) || defined(__AVR_ATmega4809__)
+#if defined(__AVR_ATmega4808__) || defined(__AVR_ATmega4809__)
 
 typedef uint8_t PinRegisterType;
 

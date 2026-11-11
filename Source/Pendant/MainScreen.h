@@ -148,9 +148,7 @@ void MainScreen::Update( unsigned long time )
 		}
 		else if (button == BUTTON_MACROS)
 		{
-#ifndef DISABLE_MACRO_SCREEN
 			g_MacroScreen.Activate(time);
-#endif
 		}
 	}
 	else if (g_bCanShowStop && button == BUTTON_STOP)

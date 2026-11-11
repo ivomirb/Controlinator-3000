@@ -124,7 +124,6 @@ void ZProbeScreen::Draw( void )
 			DrawTextXY(9, g_Rows[4], ROMSTR("CONTACT"));
 			SetDrawColor(1);
 		}
-#ifndef DISABLE_ZPROBE_NUDGE
 		else if (pState->m_bNudging)
 		{
 			DrawBox(8, g_Rows[4] - 1, 7*7 + 1, 10);
@@ -132,7 +131,6 @@ void ZProbeScreen::Draw( void )
 			DrawTextXY(9, g_Rows[4], ROMSTR("MOVE XY"));
 			SetDrawColor(1);
 		}
-#endif
 #if PARTIAL_SCREEN_UPDATE
 		else
 		{
@@ -165,12 +163,10 @@ void ZProbeScreen::Update( unsigned long time )
 		return;
 	}
 
-#ifndef DISABLE_ZPROBE_NUDGE
 	if (time - pState->m_LastInputTime > NUDGE_INACTIVITY_TIMER)
 	{
 		CancelNudge();
 	}
-#endif
 
 	if (!pState->m_bJoggingLocked && g_MachineStatus == STATUS_IDLE && (time - g_LastBusyTime > 500) && !pState->m_bJoggingUp && !pState->m_bJoggingDown)
 	{
@@ -248,13 +244,10 @@ void ZProbeScreen::Update( unsigned long time )
 	else if (g_bCanShowStop && button == BUTTON_STOP)
 	{
 		Serial.println(g_StrSTOP);
-#ifndef DISABLE_ZPROBE_NUDGE
 		auto *pState = GetActiveState();
 		pState->m_bNudging = false;
-#endif
 	}
 
-#ifndef DISABLE_ZPROBE_NUDGE
 	if (pState->m_ProbeMode == PROBE_Z && button == BUTTON_JOYSTICK)
 	{
 		if (!pState->m_bNudging && !pState->m_bJoggingUp && !pState->m_bJoggingDown)
@@ -302,7 +295,6 @@ void ZProbeScreen::Update( unsigned long time )
 			}
 		}
 	}
-#endif
 }
 
 void ZProbeScreen::Activate( unsigned long time, ProbeMode mode, bool bNotify )
@@ -324,18 +316,14 @@ void ZProbeScreen::Activate( unsigned long time, ProbeMode mode, bool bNotify )
 	pState->m_bNudging = false;
 	pState->m_LastInputTime = time;
 
-#ifndef DISABLE_ZPROBE_NUDGE
 	pState->m_LastJoystickTime = time;
 	pState->m_OldJoyX = pState->m_OldJoyY = 0;
-#endif
 }
 
 void ZProbeScreen::Deactivate( void )
 {
 	CancelJog();
-#ifndef DISABLE_ZPROBE_NUDGE
 	CancelNudge();
-#endif
 }
 
 void ZProbeScreen::CancelJog( void )
@@ -351,7 +339,6 @@ void ZProbeScreen::CancelJog( void )
 	}
 }
 
-#ifndef DISABLE_ZPROBE_NUDGE
 void ZProbeScreen::CancelNudge( void )
 {
 	auto *pState = GetActiveState();
@@ -362,4 +349,3 @@ void ZProbeScreen::CancelNudge( void )
 		pState->m_bNudging = false;
 	}
 }
-#endif

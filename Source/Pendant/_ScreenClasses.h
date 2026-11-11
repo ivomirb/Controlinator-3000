@@ -512,21 +512,17 @@ public:
 		uint8_t m_ProbeMode : 2;
 		unsigned long m_LastInputTime;
 
-#ifndef DISABLE_ZPROBE_NUDGE
 		unsigned long m_LastJoystickTime; // time of last sent joystick message
 
 		// previous quantized joystick position
 		int16_t m_OldJoyX;
 		int16_t m_OldJoyY;
-#endif
 
 #if USE_SHARED_STATE
 	};
 
 	void CancelJog( void );
-#ifndef DISABLE_ZPROBE_NUDGE
 	void CancelNudge( void );
-#endif
 
 	friend union ScreenTimeshare;
 	ActiveState *GetActiveState( void );
