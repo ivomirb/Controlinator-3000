@@ -1614,22 +1614,14 @@ function WritePort(text)
 	}
 }
 
-// Executes a CONTROL macro by name (either G-code or Javascript)
+// Executes a Groove Control macro by name
 function ExecuteMacro(macroName)
 {
 	for (var i = 0; i < buttonsarray.length; i++)
 	{
-		var button = buttonsarray[i];
-		if (button.title.replaceAll('{', '_').replaceAll('}', '_') == macroName)
+		if (buttonsarray[i].title == macroName)
 		{
-			if (button.codetype == "gcode")
-			{
-				sendGcode(button.gcode);
-			}
-			else if (button.codetype == "javascript" && !button.jsrunonstartup)
-			{
-				runJsMacro(i);
-			}
+			runMacro(i);
 			break;
 		}
 	}
