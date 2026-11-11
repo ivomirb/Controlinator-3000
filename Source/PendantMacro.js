@@ -111,11 +111,11 @@ function GetDefaultSettings()
 		axisCount: 3, // 3 or 4
 		pauseSpindle: false,
 		jobChecklist: "Remove Probe|Turn On Spindle",
-		safeLimitsEnabled: true,
-		useSystemLimits: true,
+		safeLimits: 'grbl',
 		safeLimitsX: {min: 0, max: 0},
 		safeLimitsY: {min: 0, max: 0},
 		safeLimitsZ: {min: 0, max: 0},
+		safeLimitsA: {min: 0, max: 0},
 
 		// Z probe
 		zProbe: {
@@ -476,7 +476,7 @@ function PushSettings(pushRomSettings)
 // Returns true if value + delta is within the safe area
 function IsSafeAbsoluteMove(value, delta, axis, bInches)
 {
-	if (!g_PendantSettings.safeLimitsEnabled)
+	if (!g_PendantSettings.safeLimits)
 	{
 		return true;
 	}
@@ -500,7 +500,7 @@ function IsSafeAbsoluteMove(value, delta, axis, bInches)
 // Clamps value + delta to keep it within the safe range for the axis
 function ClampSafeAbsoluteMove(value, delta, axis, bInches)
 {
-	if (!g_PendantSettings.safeLimitsEnabled)
+	if (!g_PendantSettings.safeLimits)
 	{
 		return value + delta;
 	}
@@ -700,7 +700,7 @@ function HandleJogCommand(command)
 		}
 
 		const limits = GetSafeLimits(axis);
-		const enableLimits = g_PendantSettings.safeLimitsEnabled && limits.max > limits.min;
+		const enableLimits = g_PendantSettings.safeLimits && limits.max > limits.min;
 		const params = {
 			axis: axis.toLowerCase(),
 			min: limits.min,
@@ -731,7 +731,7 @@ function HandleJogCommand(command)
 				g_JogXYSettings = {
 					minX: limitsX.min, minY: limitsY.min, minZ: 0,
 					maxX: limitsX.max, maxY: limitsY.max, maxZ: 0,
-					enableLimits: g_PendantSettings.safeLimitsEnabled,
+					enableLimits: !!g_PendantSettings.safeLimits,
 					speedXY: Math.min(parseFloat(grblParams.$110), parseFloat(grblParams.$111)),
 					speedZ: 0,
 					scale: command.startsWith("NXY") ? (g_PendantSettings.zProbe.nudgeSpeed / (100 * JOYSTICK_STEPS)) : (1 / JOYSTICK_STEPS)
@@ -998,7 +998,7 @@ function HandleProbeCommand(command)
 		{
 			return;
 		}
-		if (g_PendantSettings.safeLimitsEnabled)
+		if (g_PendantSettings.safeLimits)
 		{
 			var limits = GetSafeLimits('Z');
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z < limits.max)
@@ -1023,7 +1023,7 @@ function HandleProbeCommand(command)
 		}
 		var feed = grblParams.$112 * g_ProbeZDownFeed / 100;
 		var gcode;
-		if (g_PendantSettings.safeLimitsEnabled)
+		if (g_PendantSettings.safeLimits)
 		{
 			var limits = GetSafeLimits('Z');
 			if (laststatus.machine.position.work.z + laststatus.machine.position.offset.z > limits.min)
@@ -1123,7 +1123,7 @@ function HandleProbeCommand(command)
 					var maxZ = GetSafeLimits('Z').max;
 					var travel = settings.retract1.travel;
 					var feed = Math.max(Math.min(settings.retract1.feed, grblParams.$112), 10);
-					if (settings.style == "single" && g_PendantSettings.safeLimitsEnabled && travel > maxZ - probe.z)
+					if (settings.style == "single" && g_PendantSettings.safeLimits && travel > maxZ - probe.z)
 					{
 						if (probe.z < maxZ)
 						{
@@ -1168,7 +1168,7 @@ function HandleProbeCommand(command)
 					var maxZ = GetSafeLimits('Z').max;
 					var travel = settings.retract2.travel;
 					var feed = Math.max(Math.min(settings.retract2.feed, grblParams.$112), 10);
-					if (g_PendantSettings.safeLimitsEnabled && travel > maxZ - probe.z)
+					if (g_PendantSettings.safeLimits && travel > maxZ - probe.z)
 					{
 						if (probe.z < maxZ)
 						{
@@ -1911,6 +1911,7 @@ function StartJoystick()
 
 	var calibrateCtx = document.getElementById('PendantCalCanvas').getContext("2d");
 	calibrateCtx.lineWidth = 2;
+	calibrateCtx.strokeStyle = "#000000";
 	calibrateCtx.beginPath();
 	calibrateCtx.rect(centerX - Scale - MarkerSize, centerY - Scale - MarkerSize, (Scale+MarkerSize)*2 + 2, (Scale+MarkerSize)*2 + 2);
 	calibrateCtx.stroke();
@@ -2087,13 +2088,14 @@ window.g_bZThicknessValid = false; // if the probe thickness value was modified
 // Note: intially this was wrapped in a form, however a button in the form causes the app to reset. Seems to work without a form anyway
 const g_SettingsContent = `<div style="height:530px;">
 <ul data-role="tabs" data-expand="true">
-  <li onclick="SelectSettingsTab(0);"><a id="PendantTab1" href="#">Main Settings</a></li>
-  <li onclick="SelectSettingsTab(1);"><a id="PendantTab2" href="#">Z Probe</a></li>
-  <li onclick="SelectSettingsTab(2);"><a id="PendantTab3" href="#">Tool Probe</a></li>
-  <li onclick="SelectSettingsTab(3);"><a id="PendantTab4" href="#">Macros</a></li>
-  <li onclick="SelectSettingsTab(4);"><a id="PendantTab5" href="#">Calibrate Joystick</a></li>
+  <li onclick="SelectSettingsTab('main');"><a id="PendantTabMain" href="#">Main Settings</a></li>
+  <li onclick="SelectSettingsTab('limits');"><a id="PendantTabLimits" href="#">Limits</a></li>
+  <li onclick="SelectSettingsTab('zprobe');"><a id="PendantTabZProbe" href="#">Z Probe</a></li>
+  <li onclick="SelectSettingsTab('toolprobe');"><a id="PendantTabToolProbe" href="#">Tool Probe</a></li>
+  <li onclick="SelectSettingsTab('macros');"><a id="PendantTabMacros" href="#">Macros</a></li>
+  <li onclick="SelectSettingsTab('calibrate');"><a id="PendantTabCalibrate" href="#">Calibrate Joystick</a></li>
 </ul>
-<div id="PendantTab1Content">
+<div id="PendantTabMainContent">
   <div class="row mt-1">
     <label class="cell-sm-4 pt-1">Connect Automatically <span class="far fa-question-circle ml-1"
       title="Check if you want the pendant to be connected on startup"></span></label>
@@ -2114,7 +2116,7 @@ This setting can only be edited while the pendant is connected"></span></label>
     <label class="cell-sm-4 pt-1">Display Units <span class="far fa-question-circle ml-1"
       title="Select the units for the coordinates on the pendant display"></span></label>
     <div class="cell-sm-6">
-      <select id="PendantDisplayUnits" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }">
+      <select id="PendantDisplayUnits" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 'main') { SelectSettingsTab('main'); }">
         <option value="mm">mm</option>
         <option value="inches">inches</option>
       </select>
@@ -2140,7 +2142,7 @@ This setting can only be edited while the pendant is connected"></span></label>
   <div class="row">
     <label class="cell-sm-4">Show 4th Axis</label>
     <div class="cell-sm-6">
-      <input id="PendantShow4Axis" type="checkbox" data-role="checkbox" data-style="2" onclick="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }" checked />
+      <input id="PendantShow4Axis" type="checkbox" data-role="checkbox" data-style="2" onclick="if (g_SettingsTabIndex == 'main') { SelectSettingsTab('main'); }" checked />
     </div>
   </div>
 
@@ -2170,21 +2172,22 @@ The names are separated by |. Each name is up to 16 characters"></span></label>
       <input id="PendantJobChecklist" data-role="input" data-clear-button="false" data-editable="true" />
     </div>
   </div>
+</div>
 
-  <div class="row mb-2 pt-1 border-top bd-gray">
-    <div class="cell-sm-4">
-      <input id="PendantSafeLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Enable Safe Jogging Area" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
-    </div>
+<div id="PendantTabLimitsContent">
+  <div class="row mb-3 mt-2">
+    <label class="cell-sm-3 pt-1">Safe Jogging Area <span class="far fa-question-circle ml-1"
+      title="You can set a safe area that will limit the jogging moves from the pendant"></span></label>
     <div class="cell-sm-5">
-      <input id="PendantSystemLimits" type="checkbox" data-role="checkbox" data-style="2" data-caption="Use Groove Control Machine Limits" checked onchange="if (g_SettingsTabIndex == 0) { SelectSettingsTab(0); }"/>
+      <select id="PendantSafeLimits" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 'limits') { SelectSettingsTab('limits'); }">
+        <option value="grbl">Use Grbl Settings</option>
+        <option value="custom">Custom</option>
+        <option value="">Disabled</option>
+      </select>
     </div>
   </div>
 
   <div class="row mb-2">
-    <div class="cell-sm-2">
-      <button id="PendantResetSafeLimits" class="button" onclick="ResetSafeLimits();" title="Reset to the default size based on the Grbl settings.
-The machine needs to be connected">Reset</button>
-    </div>
     <div class="cell-sm-4">
       <input id="PendantMinX" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min X" data-append="mm" data-editable="true" />
     </div>
@@ -2193,7 +2196,6 @@ The machine needs to be connected">Reset</button>
     </div>
   </div>
   <div class="row mb-2">
-    <label class="cell-sm-2"></label>
     <div class="cell-sm-4">
       <input id="PendantMinY" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Y" data-append="mm" data-editable="true" />
     </div>
@@ -2202,7 +2204,6 @@ The machine needs to be connected">Reset</button>
     </div>
   </div>
   <div class="row mb-2">
-    <label class="cell-sm-2"></label>
     <div class="cell-sm-4">
       <input id="PendantMinZ" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min Z" data-append="mm" data-editable="true" />
     </div>
@@ -2210,13 +2211,27 @@ The machine needs to be connected">Reset</button>
       <input id="PendantMaxZ" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max Z" data-append="mm" data-editable="true" />
     </div>
   </div>
+  <div class="row mb-2" id="PendantMinMaxA">
+    <div class="cell-sm-4">
+      <input id="PendantMinA" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Min A" data-append="mm" data-editable="true" />
+    </div>
+    <div class="cell-sm-4">
+      <input id="PendantMaxA" type="number" style="text-align:right;" data-role="input" data-clear-button="false" data-prepend="Max A" data-append="mm" data-editable="true" />
+    </div>
+  </div>
+  <div class="row mb-2">
+    <div class="cell-sm-2">
+      <button id="PendantResetSafeLimits" class="button" onclick="ResetSafeLimits();" title="Fills in the default values from the current Grbl settings. You can tweak them afterwards.
+The machine needs to be connected">Update From Grbl</button>
+    </div>
+  </div>
 </div>
 
-<div id="PendantTab2Content">
+<div id="PendantTabZProbeContent">
   <div class="row  mt-3 mb-2">
     <label class="cell-sm-3 pt-1">Z Probe Sequence</label>
     <div class="cell-sm-4">
-    <select id="PendantZStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 1) { SelectSettingsTab(1); }">
+    <select id="PendantZStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 'zprobe') { SelectSettingsTab('zprobe'); }">
       <option value="single">Single Pass</option>
       <option value="dual">Dual Pass</option>
       <option value="default">Use default dialog</option>
@@ -2315,11 +2330,11 @@ Use shorter distance and slower speed than the first pass for better accuracy"><
   </div>
 </div>
 
-<div id="PendantTab3Content">
+<div id="PendantTabToolProbeContent">
   <div class="row mt-3 mb-2">
     <label class="cell-sm-3 pt-1">Tool Probe Sequence</label>
     <div class="cell-sm-4">
-    <select id="PendantToolStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 2) { SelectSettingsTab(2); }">
+    <select id="PendantToolStyle" data-role="select" data-clear-button="false" data-filter="false" onchange="if (g_SettingsTabIndex == 'toolprobe') { SelectSettingsTab('toolprobe'); }">
       <option value="disable">Disabled</option>
       <option value="single">Single Pass</option>
       <option value="dual">Dual Pass</option>
@@ -2418,7 +2433,7 @@ Use shorter distance and slower speed than the first pass for better accuracy"><
   </div>
 </div>
 
-<div id="PendantTab4Content">
+<div id="PendantTabMacrosContent">
   <small class="mb-4 mt-2" style="display:block">Select up to 7 of the existing Groove Control macros to activate from the pendant.
   Enter the macro name in the first column. In the second column you can enter a display name to show on the pendant screen. It can be up to 8 characters long.<br>
   Check the Hold box to require the button to be pressed for 1 second (prevents accidental activation).</small>
@@ -2508,7 +2523,7 @@ Use shorter distance and slower speed than the first pass for better accuracy"><
   </div>
 </div>
 
-<div id="PendantTab5Content">
+<div id="PendantTabCalibrateContent">
   <small class="mb-4 mt-2" style="display:block;">Move the joystick on the pendant to verify it is connected. Press the Start Calibration
   button to begin the calibration process, which will determine the range of motion and the center zone for each axis.
   You can also enter the values manually.</small>
@@ -2588,25 +2603,21 @@ The calibration process uses a conservative estimate. If your joystick is more a
 // Selects a tab in the settings. Shows/hides the necessary elements
 window.SelectSettingsTab = function(index)
 {
+	var tabMain = (index == 'main');
+	var tabLimits = (index == 'limits');
+	var tabZProbe = (index == 'zprobe');
+	var tabToolProbe = (index == 'toolprobe');
+	var tabMacros = (index == 'macros');
+	var tabCalibrate = (index == 'calibrate');
 	if (index != g_SettingsTabIndex)
 	{
-		if (index == 4 && g_PendantPort == undefined)
+		if (tabCalibrate && g_PendantPort == undefined)
 		{
 			return;
 		}
 		g_SettingsTabIndex = index;
 	}
-	var tab1 = (index == 0);
-	var tab2 = (index == 1);
-	var tab3 = (index == 2);
-	var tab4 = (index == 3);
-	var tab5 = (index == 4);
-	$('#PendantTab1Content').toggle(tab1);
-
-	var safeLimitsDisabled = !$('#PendantSafeLimits').prop('checked');
-	var useSystemLimits = $('#PendantSystemLimits').prop('checked');
-	$('#PendantSystemLimits').prop('disabled', safeLimitsDisabled);
-	$('#PendantResetSafeLimits,#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ').prop('disabled', safeLimitsDisabled || useSystemLimits);
+	$('#PendantTabMainContent').toggle(tabMain);
 
 	var displayUnits = $('#PendantDisplayUnits').val();
 	$('#PendantStepsMm').toggle(displayUnits != "inches");
@@ -2615,23 +2626,29 @@ window.SelectSettingsTab = function(index)
 	var show4axis = $('#PendantShow4Axis').prop('checked');
 	$('#PendantStepsDeg').toggle(show4axis);
 
-	$('#PendantTab2Content').toggle(tab2);
+	$('#PendantTabLimitsContent').toggle(tabLimits);
+	var safeLimits = $('#PendantSafeLimits').val();
+	$('#PendantMinX,#PendantMaxX,#PendantMinY,#PendantMaxY,#PendantMinZ,#PendantMaxZ,#PendantMinA,#PendantMaxA').prop('disabled', safeLimits != 'custom');
+	$('#PendantMinMaxA').toggle(show4axis);
+	$('#PendantResetSafeLimits').prop('disabled', safeLimits != 'custom' || !laststatus || laststatus.comms.connectionStatus < 2);
+
+	$('#PendantTabZProbeContent').toggle(tabZProbe);
 	var zStyle = $('#PendantZStyle').val();
 	$('.pendant-z-single').toggle(zStyle != "default");
 	$('.pendant-z-dual').toggle(zStyle == "dual");
 
-	$('#PendantTab3Content').toggle(tab3);
+	$('#PendantTabToolProbeContent').toggle(tabToolProbe);
 
 	var toolStyle = $('#PendantToolStyle').val();
 	$('.pendant-tool-single').toggle(toolStyle != "disable");
 	$('.pendant-tool-dual').toggle(toolStyle == "dual");
 
-	$('#PendantTab4Content').toggle(tab4);
+	$('#PendantTabMacrosContent').toggle(tabMacros);
 
-	$('#PendantTab5Content,#PendantCalibrate').toggle(tab5);
+	$('#PendantTabCalibrateContent,#PendantCalibrate').toggle(tabCalibrate);
 	$('#PendantCalibrateCancel').hide();
 
-	if (tab5)
+	if (tabCalibrate)
 	{
 		StartJoystick();
 	}
@@ -2641,62 +2658,39 @@ window.SelectSettingsTab = function(index)
 	}
 }
 
-function GetDefaultSafeLimits(axis)
+function GetGrblSafeLimits(axis)
 {
-	var size;
-	var mask;
-	switch (axis)
-	{
-		case "X": size = parseFloat(grblParams.$130); mask = 1; break;
-		case "Y": size = parseFloat(grblParams.$131); mask = 2; break;
-		case "Z": size = parseFloat(grblParams.$132); mask = 4; break;
-	}
-
-	if (laststatus.comms.connectionStatus != 0 && size != undefined)
-	{
-		var homeNegative = (parseInt(grblParams.$23) & mask) != 0; // axis homes in the negative direction
-		if (laststatus.machine.firmware.features.contains('Z'))
-		{
-			return homeNegative ? {min: 0, max: size} : {min: -size, max: 0};
-		}
-		else
-		{
-			var pullOff = parseFloat(grblParams.$27);
-			return homeNegative ? {min: pullOff - size, max: 0} : {min: -size, max: -pullOff};
-		}
-	}
-	return {min: 0, max: 0};
+	const limits = computeMachineLimits(1);
+	return {min: limits["min" + axis], max: limits["max" + axis]};
 }
 
 function GetSettingsSafeLimits(settings, axis)
 {
-	var limits = settings["safeLimits" + axis];
-	return (limits.min == 0 && limits.max == 0) ? GetDefaultSafeLimits(axis) : limits;
+	const limits = settings["safeLimits" + axis];
+	return (limits.min == 0 && limits.max == 0) ? GetGrblSafeLimits(axis) : limits;
 }
 
 function GetSafeLimits(axis)
 {
-	if (g_PendantSettings.useSystemLimits)
-	{
-		const limits = computeMachineLimits(1);
-		return {min: limits["min" + axis], max: limits["max" + axis]};
-	}
-	return GetSettingsSafeLimits(g_PendantSettings, axis);
+	return g_PendantSettings.safeLimits == 'grbl' ? GetGrblSafeLimits(axis) : GetSettingsSafeLimits(g_PendantSettings, axis);
 }
 
 window.ResetSafeLimits = function()
 {
 	if (laststatus.comms.connectionStatus != 0)
 	{
-		var limits = GetDefaultSafeLimits('X');
+		var limits = GetGrblSafeLimits('X');
 		$('#PendantMinX').val(limits.min);
 		$('#PendantMaxX').val(limits.max);
-		limits = GetDefaultSafeLimits('Y');
+		limits = GetGrblSafeLimits('Y');
 		$('#PendantMinY').val(limits.min);
 		$('#PendantMaxY').val(limits.max);
-		limits = GetDefaultSafeLimits('Z');
+		limits = GetGrblSafeLimits('Z');
 		$('#PendantMinZ').val(limits.min);
 		$('#PendantMaxZ').val(limits.max);
+		limits = GetGrblSafeLimits('A');
+		$('#PendantMinA').val(limits.min);
+		$('#PendantMaxA').val(limits.max);
 	}
 }
 
@@ -2711,11 +2705,11 @@ function ReadSettingsFromDialog(updateRomSettings)
 	g_PendantSettings.wheelStepsIn = $('#PendantWheelStepsIn').val().split(',').map((x) => Number(x));
 	g_PendantSettings.wheelStepsDeg = $('#PendantWheelStepsDeg').val().split(',').map((x) => Number(x));
 
-	g_PendantSettings.safeLimitsEnabled = $('#PendantSafeLimits').prop('checked');
-	g_PendantSettings.useSystemLimits = $('#PendantSystemLimits').prop('checked');
+	g_PendantSettings.safeLimits = $('#PendantSafeLimits').val();
 	g_PendantSettings.safeLimitsX = {min: Number($('#PendantMinX').val()), max: Number($('#PendantMaxX').val())};
 	g_PendantSettings.safeLimitsY = {min: Number($('#PendantMinY').val()), max: Number($('#PendantMaxY').val())};
 	g_PendantSettings.safeLimitsZ = {min: Number($('#PendantMinZ').val()), max: Number($('#PendantMaxZ').val())};
+	g_PendantSettings.safeLimitsA = {min: Number($('#PendantMinA').val()), max: Number($('#PendantMaxA').val())};
 
 	// advanced settings
 	g_PendantSettings.axisCount = $('#PendantShow4Axis').prop('checked') ? 4 : 3;
@@ -2789,8 +2783,7 @@ function UpdateSettingsControls(settings, romSettings)
 	settings.wheelStepsDeg.forEach(s => { steps = steps ? (steps + ", " + s.toFixed(3)) : s.toFixed(3); });
 	$('#PendantWheelStepsDeg').val(steps);
 
-	$('#PendantSafeLimits').prop('checked', settings.safeLimitsEnabled);
-	$('#PendantSystemLimits').prop('checked', settings.useSystemLimits);
+	$('#PendantSafeLimits').val(settings.safeLimits);
 
 	var limits = GetSettingsSafeLimits(settings, 'X');
 	$('#PendantMinX').val(limits.min);
@@ -2803,6 +2796,10 @@ function UpdateSettingsControls(settings, romSettings)
 	limits = GetSettingsSafeLimits(settings, 'Z');
 	$('#PendantMinZ').val(limits.min);
 	$('#PendantMaxZ').val(limits.max);
+
+	limits = GetSettingsSafeLimits(settings, 'A');
+	$('#PendantMinA').val(limits.min);
+	$('#PendantMaxA').val(limits.max);
 
 	// advanced settings
 	$('#PendantShow4Axis').prop('checked', settings.axisCount == 4);
@@ -2953,13 +2950,13 @@ window.EditPendantSettings = function()
 	if (g_PendantPort == undefined)
 	{
 		$('#PendantName').prop('disabled', true);
-		$('#PendantTab5').prop('disabled', true);
-		$('#PendantTab5').prop('title', "Only available when the pendant is connected");
+		$('#PendantTabCalibrate').prop('disabled', true);
+		$('#PendantTabCalibrate').prop('title', "Only available when the pendant is connected");
 	}
 
 	UpdateSettingsControls(g_PendantSettings, g_PendantRomSettings);
 
-	SelectSettingsTab(0);
+	SelectSettingsTab('main');
 }
 
 ///////////////////////////////////////////////////////////////////////////////
